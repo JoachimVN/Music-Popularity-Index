@@ -24,8 +24,7 @@ def export():
     for rank, row in df.iterrows():
         bb_peak = f"#{int(row['bb_peak'])}" if pd.notna(row.get("bb_peak")) else "—"
         bb_weeks = f"{int(row['bb_weeks'])}w" if pd.notna(row.get("bb_weeks")) else "—"
-        sp_apps = f"{int(row['sp_appearances'])}w" if pd.notna(row.get("sp_appearances")) else "—"
-        sp_streams = f"{int(row['sp_total_streams']):,}" if pd.notna(row.get("sp_total_streams")) else "—"
+        sp_streams = f"{int(row['spotify_streams']):,}" if pd.notna(row.get("spotify_streams")) else "—"
         lfm_plays = f"{int(row['playcount']):,}" if pd.notna(row.get("playcount")) else "—"
         score = row.get("final_score", 0)
 
@@ -37,7 +36,6 @@ def export():
           <td class="score">{score:.1f}</td>
           <td>{bb_peak}</td>
           <td>{bb_weeks}</td>
-          <td>{sp_apps}</td>
           <td>{sp_streams}</td>
           <td>{lfm_plays}</td>
         </tr>"""
@@ -71,7 +69,7 @@ def export():
 </head>
 <body>
   <h1>Music Popularity Index</h1>
-  <p class="subtitle">Top {TOP_N} songs · Billboard Hot 100 (1958–present) · Spotify Charts (2017–present) · Last.fm plays</p>
+  <p class="subtitle">Top {TOP_N} songs · Billboard Hot 100 (1958–present) · Spotify all-time streams · Last.fm plays</p>
   <table id="table">
     <thead>
       <tr>
@@ -81,9 +79,8 @@ def export():
         <th onclick="sortBy(3)">Score</th>
         <th onclick="sortBy(4)">BB Peak</th>
         <th onclick="sortBy(5)">BB Weeks</th>
-        <th onclick="sortBy(6)">SP Weeks</th>
-        <th onclick="sortBy(7)">SP Streams</th>
-        <th onclick="sortBy(8)">Last.fm Plays</th>
+        <th onclick="sortBy(6)">Spotify Streams</th>
+        <th onclick="sortBy(7)">Last.fm Plays</th>
       </tr>
     </thead>
     <tbody>{rows_html}
