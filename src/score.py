@@ -20,8 +20,8 @@ DATA = os.path.join(os.path.dirname(__file__), "../data")
 
 def normalize_title(t):
     t = str(t).lower().strip()
-    t = re.sub(r"\(.*?\)", "", t)
-    t = re.sub(r"\[.*?\]", "", t)
+    t = re.sub(r"\([^\)]*\)", "", t)
+    t = re.sub(r"\[[^\]]*\]", "", t)
     t = re.sub(r"[^\w\s]", "", t)
     return re.sub(r"\s+", " ", t).strip()
 
@@ -43,12 +43,22 @@ def weeks_score(weeks, max_weeks):
 
 
 def load_billboard():
-    path = os.path.join(DATA, "billboard_raw.csv")
+    path = os.path.join(DATA, "hot100.csv")
     if not os.path.exists(path):
-        print("WARNING: billboard_raw.csv not found — Billboard dimension skipped")
+        print("WARNING: hot100.csv not found — Billboard dimension skipped")
         return pd.DataFrame()
 
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, usecols=["Song", "Artist", "Peak Position", "Weeks in Charts"])
+    df = df.rename(columns={
+        "Song": "title",
+        "Artist": "artist",
+        "Peak Position": "peak_pos",
+        "Weeks in Charts": "weeks_on_chart",
+    })
+    df["peak_pos"] = pd.to_numeric(df["peak_pos"], errors="coerce")
+    df["weeks_on_chart"] = pd.to_numeric(df["weeks_on_chart"], errors="coerce")
+    df = df.dropna(subset=["peak_pos", "weeks_on_chart"])
+
     df["key_title"] = df["title"].map(normalize_title)
     df["key_artist"] = df["artist"].map(normalize_artist)
 
@@ -90,6 +100,15 @@ def load_lastfm():
     df["key_artist"] = df["artist"].map(normalize_artist)
     df["lfm_score"] = np.clip(df["playcount"] / LASTFM_MAX_PLAYCOUNT, 0, 1)
     return df[["key_title", "key_artist", "playcount", "listeners", "lfm_score"]]
+
+
+def _apply_weights(merged, available_dims):
+    # No redistribution: songs missing a dimension simply don't earn those points.
+    # Final normalization (divide by max) makes everything relative at the end.
+    scores = pd.Series(0.0, index=merged.index)
+    for dim, col in available_dims.items():
+        scores += WEIGHTS[dim] * merged[col].fillna(0)
+    return scores
 
 
 def compute_scores(songs_only=False):
@@ -138,19 +157,7 @@ def compute_scores(songs_only=False):
         "lastfm": "lfm_score",
     }
     available_dims = {k: v for k, v in dim_cols.items() if v in merged.columns}
-
-    merged["final_score"] = 0.0
-    for dim, col in available_dims.items():
-        has_data = merged[col].notna()
-        # For songs missing this dim, find their total available weight and rescale
-        for idx in merged.index:
-            if pd.isna(merged.at[idx, col]):
-                continue
-            row_available = [d for d, c in available_dims.items() if pd.notna(merged.at[idx, c])]
-            total_w = sum(WEIGHTS[d] for d in row_available)
-            if total_w > 0:
-                scaled_w = WEIGHTS[dim] / total_w
-                merged.at[idx, "final_score"] += scaled_w * merged.at[idx, col]
+    merged["final_score"] = _apply_weights(merged, available_dims)
 
     # Normalize to 0–100
     max_score = merged["final_score"].max()

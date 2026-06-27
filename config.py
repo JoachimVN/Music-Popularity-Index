@@ -17,7 +17,7 @@ WEIGHTS = {
 }
 
 # Billboard: how many weeks counts as "very long" (used for normalization)
-BILLBOARD_MAX_WEEKS = 52
+BILLBOARD_MAX_WEEKS = 112  # actual max in hot100.csv dataset
 
 # Spotify streams: ceiling for normalization; top song (~5.5B) gets score 1.0
 SPOTIFY_STREAMS_MAX = 6_000_000_000
