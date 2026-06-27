@@ -51,7 +51,13 @@ def fetch_all():
         return
 
     scores = pd.read_csv(SCORES, index_col=0)
-    songs = scores.head(TOP_N)[["title", "artist"]].drop_duplicates()
+
+    # Pull from two pools: top N by composite score AND top N by Billboard alone.
+    # Billboard-only pool rescues classics that lack Spotify data and never
+    # made the composite top N in earlier runs.
+    by_composite = scores.head(TOP_N)
+    by_billboard = scores.nlargest(TOP_N, "bb_score") if "bb_score" in scores.columns else pd.DataFrame()
+    songs = pd.concat([by_composite, by_billboard])[["title", "artist"]].drop_duplicates()
 
     existing = pd.read_csv(OUTPUT) if os.path.exists(OUTPUT) else pd.DataFrame()
     done = set(zip(existing["title"], existing["artist"])) if not existing.empty else set()

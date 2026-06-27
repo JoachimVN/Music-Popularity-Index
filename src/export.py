@@ -7,7 +7,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import TOP_N
+from config import TOP_N, BILLBOARD_ERA_HALF_WINDOW
 
 SCORES = os.path.join(os.path.dirname(__file__), "../data/scores.csv")
 LINKS = os.path.join(os.path.dirname(__file__), "../data/spotify_links.csv")
@@ -84,7 +84,7 @@ def export():
 </head>
 <body>
   <h1>Music Popularity Index</h1>
-  <p class="subtitle">Top {TOP_N} songs · Billboard Hot 100 (1958–present) · Spotify all-time streams · Era-normalized within decade</p>
+  <p class="subtitle">Top {TOP_N} songs · Billboard Hot 100 (1958–present) · Spotify all-time streams · Era-normalized within a ±{BILLBOARD_ERA_HALF_WINDOW}-year window</p>
   <table id="table">
     <thead>
       <tr>

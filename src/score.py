@@ -13,7 +13,7 @@ import sys
 import re
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import WEIGHTS
+from config import WEIGHTS, BILLBOARD_ERA_HALF_WINDOW, BILLBOARD_PEAK_WEIGHT
 
 DATA = os.path.join(os.path.dirname(__file__), "../data")
 
@@ -35,12 +35,55 @@ def normalize_artist(a):
     return re.sub(r"\s+", " ", a).strip()
 
 
-def peak_score(peak):
-    return (101 - np.clip(peak, 1, 100)) / 100
+def rolling_percentile(years, values, half_window, higher_is_better):
+    """Percentile rank of each value against all songs released within
+    ±half_window years of it (a centred rolling cohort instead of fixed
+    calendar decades). Uses mid-rank percentiles so ties share a rank:
 
+        pct = (#cohort this song beats + 0.5 * #ties) / cohort size
 
-def weeks_score(weeks, max_weeks):
-    return np.clip(weeks / max_weeks, 0, 1)
+    For peak position, lower is better (#1 beats #100), so set
+    higher_is_better=False. For chart longevity, more weeks is better.
+
+    Values must be small non-negative integers (peak 1–100, weeks 1–~112);
+    the cohort distribution per year is built once via a histogram, then a
+    sliding window sum over the year axis makes each lookup O(1).
+    """
+    years = np.asarray(years, dtype=np.int64)
+    values = np.asarray(values, dtype=np.int64)
+
+    y_min = years.min()
+    v_min = values.min()
+    n_years = int(years.max() - y_min + 1)
+    n_vals = int(values.max() - v_min + 1)
+
+    # hist[year_idx, value_idx] = count of songs
+    hist = np.zeros((n_years, n_vals), dtype=np.int64)
+    np.add.at(hist, (years - y_min, values - v_min), 1)
+
+    # Prefix sum over the year axis: cum_year[k] = total counts for years < k,
+    # so the cohort for window [lo, hi] is cum_year[hi + 1] - cum_year[lo].
+    cum_year = np.vstack([np.zeros(n_vals, np.int64), np.cumsum(hist, axis=0)])
+
+    out = np.empty(len(years), dtype=float)
+    cohort_cache = {}
+    for i in range(len(years)):
+        yi = int(years[i] - y_min)
+        if yi not in cohort_cache:
+            lo = max(0, yi - half_window)
+            hi = min(n_years - 1, yi + half_window)
+            cohort = cum_year[hi + 1] - cum_year[lo]
+            cohort_cache[yi] = (cohort, np.cumsum(cohort), int(cohort.sum()))
+        cohort, cum_val, total = cohort_cache[yi]
+
+        v = int(values[i] - v_min)
+        eq = int(cohort[v])
+        le = int(cum_val[v])        # songs with value <= this one
+        lt = le - eq                # strictly less
+        gt = total - le             # strictly greater
+        beaten = lt if higher_is_better else gt
+        out[i] = (beaten + 0.5 * eq) / total
+    return out
 
 
 def load_billboard():
@@ -60,7 +103,6 @@ def load_billboard():
     df["peak_pos"] = pd.to_numeric(df["peak_pos"], errors="coerce")
     df["weeks_on_chart"] = pd.to_numeric(df["weeks_on_chart"], errors="coerce")
     df["year"] = pd.to_datetime(df["date"], errors="coerce").dt.year
-    df["decade"] = (df["year"] // 10) * 10
     df = df.dropna(subset=["peak_pos", "weeks_on_chart", "year"])
 
     df["key_title"] = df["title"].map(normalize_title)
@@ -74,19 +116,31 @@ def load_billboard():
         artist=("artist", "first"),
         bb_peak=("peak_pos", "min"),
         year=("year", "min"),
-        decade=("decade", "first"),
     ).reset_index()
 
     agg = agg.join(chart_weeks_count, on=["key_title", "key_artist"])
+    agg["bb_peak"] = agg["bb_peak"].astype(int)
+    agg["bb_chart_weeks"] = agg["bb_chart_weeks"].astype(int)
+    agg["year"] = agg["year"].astype(int)
+    # Derive decade from the song's debut year (kept for reference/export only;
+    # scoring no longer buckets by decade).
+    agg["decade"] = (agg["year"] // 10) * 10
 
-    # Percentile rank within each decade — continuous, no ceiling, naturally era-normalised.
-    # Peak: ascending=False so #1 → pct=1.0, #100 → pct≈0.
-    # Weeks: ascending=True so more weeks → higher pct.
-    agg["peak_pct"] = agg.groupby("decade")["bb_peak"].rank(ascending=False, pct=True)
-    agg["weeks_pct"] = agg.groupby("decade")["bb_chart_weeks"].rank(ascending=True, pct=True)
+    # Era-normalise via a centred rolling window: each song's peak and longevity
+    # are ranked against every song released within ±BILLBOARD_ERA_HALF_WINDOW
+    # years of it. No decade-boundary discontinuities; edge years (1958, today)
+    # just see a shorter one-sided window.
+    agg["peak_pct"] = rolling_percentile(
+        agg["year"], agg["bb_peak"], BILLBOARD_ERA_HALF_WINDOW, higher_is_better=False
+    )
+    agg["weeks_pct"] = rolling_percentile(
+        agg["year"], agg["bb_chart_weeks"], BILLBOARD_ERA_HALF_WINDOW, higher_is_better=True
+    )
 
-    # 60% peak dominance, 40% chart longevity
-    agg["bb_score"] = 0.6 * agg["peak_pct"] + 0.4 * agg["weeks_pct"]
+    agg["bb_score"] = (
+        BILLBOARD_PEAK_WEIGHT * agg["peak_pct"]
+        + (1 - BILLBOARD_PEAK_WEIGHT) * agg["weeks_pct"]
+    )
     return agg
 
 

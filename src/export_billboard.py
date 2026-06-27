@@ -10,6 +10,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.score import load_billboard
+from config import BILLBOARD_ERA_HALF_WINDOW, BILLBOARD_PEAK_WEIGHT
 
 OUTPUT = os.path.join(os.path.dirname(__file__), "../output/billboard.html")
 TOP_N = 200
@@ -66,7 +67,7 @@ def export():
 </head>
 <body>
   <h1>Billboard Hot 100 — Era-Normalized</h1>
-  <p class="subtitle">Top {TOP_N} · Weeks scored relative to decade median · 30% peak position, 70% era-adjusted weeks · Re-entries counted</p>
+  <p class="subtitle">Top {TOP_N} · Peak &amp; longevity percentile-ranked within a ±{BILLBOARD_ERA_HALF_WINDOW}-year window · {int(BILLBOARD_PEAK_WEIGHT*100)}% peak position, {int((1-BILLBOARD_PEAK_WEIGHT)*100)}% chart weeks</p>
   <table id="table">
     <thead>
       <tr>
