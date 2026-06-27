@@ -22,6 +22,7 @@ def export():
 
     rows_html = ""
     for rank, row in df.iterrows():
+        year = f"{int(row['year'])}" if pd.notna(row.get("year")) else "—"
         bb_peak = f"#{int(row['bb_peak'])}" if pd.notna(row.get("bb_peak")) else "—"
         bb_weeks = f"{int(row['bb_weeks'])}w" if pd.notna(row.get("bb_weeks")) else "—"
         sp_streams = f"{int(row['spotify_streams']):,}" if pd.notna(row.get("spotify_streams")) else "—"
@@ -33,6 +34,7 @@ def export():
           <td class="rank">{rank}</td>
           <td class="title">{row['title']}</td>
           <td class="artist">{row['artist']}</td>
+          <td class="year">{year}</td>
           <td class="score">{score:.1f}</td>
           <td>{bb_peak}</td>
           <td>{bb_weeks}</td>
@@ -60,6 +62,7 @@ def export():
     .rank {{ color: #555; width: 3rem; }}
     .title {{ font-weight: 600; color: #fff; max-width: 260px; }}
     .artist {{ color: #bbb; max-width: 200px; }}
+    .year {{ color: #666; width: 4rem; }}
     .score {{ font-weight: 700; color: #1db954; }}
     th.sorted-asc::after {{ content: " ▲"; }}
     th.sorted-desc::after {{ content: " ▼"; }}
@@ -76,11 +79,12 @@ def export():
         <th onclick="sortBy(0)">#</th>
         <th onclick="sortBy(1)">Title</th>
         <th onclick="sortBy(2)">Artist</th>
-        <th onclick="sortBy(3)">Score</th>
-        <th onclick="sortBy(4)">BB Peak</th>
-        <th onclick="sortBy(5)">BB Weeks</th>
-        <th onclick="sortBy(6)">Spotify Streams</th>
-        <th onclick="sortBy(7)">Last.fm Plays</th>
+        <th onclick="sortBy(3)">Year</th>
+        <th onclick="sortBy(4)">Score</th>
+        <th onclick="sortBy(5)">BB Peak</th>
+        <th onclick="sortBy(6)">BB Weeks</th>
+        <th onclick="sortBy(7)">Spotify Streams</th>
+        <th onclick="sortBy(8)">Last.fm Plays</th>
       </tr>
     </thead>
     <tbody>{rows_html}

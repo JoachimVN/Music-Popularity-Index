@@ -48,7 +48,7 @@ def load_billboard():
         print("WARNING: hot100.csv not found — Billboard dimension skipped")
         return pd.DataFrame()
 
-    df = pd.read_csv(path, usecols=["Song", "Artist", "Peak Position", "Weeks in Charts"])
+    df = pd.read_csv(path, usecols=["Date", "Song", "Artist", "Peak Position", "Weeks in Charts"])
     df = df.rename(columns={
         "Song": "title",
         "Artist": "artist",
@@ -62,11 +62,14 @@ def load_billboard():
     df["key_title"] = df["title"].map(normalize_title)
     df["key_artist"] = df["artist"].map(normalize_artist)
 
+    df["year"] = pd.to_datetime(df["Date"], errors="coerce").dt.year
+
     agg = df.groupby(["key_title", "key_artist"]).agg(
         title=("title", "first"),
         artist=("artist", "first"),
         bb_peak=("peak_pos", "min"),
         bb_weeks=("weeks_on_chart", "max"),
+        year=("year", "min"),  # earliest chart appearance = debut year
     ).reset_index()
 
     agg["bb_score"] = (
@@ -139,7 +142,7 @@ def compute_scores(songs_only=False):
     merged = songs
     if not bb.empty:
         merged = merged.merge(
-            bb[["key_title", "key_artist", "bb_score", "bb_peak", "bb_weeks"]],
+            bb[["key_title", "key_artist", "bb_score", "bb_peak", "bb_weeks", "year"]],
             on=["key_title", "key_artist"], how="left"
         )
     if not kworb.empty:
