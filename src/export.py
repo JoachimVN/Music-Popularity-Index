@@ -5,6 +5,7 @@ Generates output/index.html — a sortable table of the top N songs by composite
 import pandas as pd
 import os
 import sys
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import TOP_N, BILLBOARD_ERA_HALF_WINDOW
@@ -52,6 +53,8 @@ def export():
           <td>{sp_streams}</td>
         </tr>"""
 
+    updated = datetime.now(timezone.utc).strftime("%d %b %Y")
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -67,6 +70,7 @@ def export():
                    padding: 0.6rem 0.9rem; border-radius: 6px; font-size: 0.85rem;
                    margin-bottom: 2rem; }}
     .wip-banner strong {{ color: #ffd75e; }}
+    .updated {{ color: #555; font-size: 0.78rem; margin-bottom: 2rem; margin-top: -1.5rem; }}
     table {{ width: 100%; border-collapse: collapse; font-size: 0.88rem; }}
     th {{ text-align: left; padding: 0.6rem 0.8rem; border-bottom: 2px solid #333;
           color: #aaa; font-weight: 600; cursor: pointer; user-select: none; white-space: nowrap; }}
@@ -90,6 +94,7 @@ def export():
   <h1>Music Popularity Index</h1>
   <p class="subtitle">Top {TOP_N} songs · Billboard Hot 100 (1958–present) · Spotify all-time streams · Era-normalized within a ±{BILLBOARD_ERA_HALF_WINDOW}-year window</p>
   <div class="wip-banner"><strong>🚧 Work in progress</strong> — the scoring model is still being tuned, so these rankings will change.</div>
+  <p class="updated">Last updated {updated} UTC</p>
   <table id="table">
     <thead>
       <tr>
