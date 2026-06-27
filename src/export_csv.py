@@ -38,7 +38,7 @@ def main():
         links = links[links["spotify_url"].notna() & (links["spotify_url"] != "")]
         merged = scores.merge(
             links[["title", "artist", "spotify_url"]],
-            on=["title", "artist"], how="left",
+            on=["title", "artist"], how="left", validate="m:1",
         )
         merged.index = scores.index  # merge resets the index; restore the rank
     else:

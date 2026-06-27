@@ -50,7 +50,7 @@ def scrape():
     df = pd.DataFrame(records)
     df.to_csv(OUTPUT, index=False)
     print(f"Saved {len(df)} songs to {OUTPUT}")
-    print(f"\nTop 5:")
+    print("\nTop 5:")
     print(df.head().to_string(index=False))
     return df
 

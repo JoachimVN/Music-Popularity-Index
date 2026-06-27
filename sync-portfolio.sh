@@ -8,7 +8,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 SRC="$ROOT/output"
 DEST="$ROOT/../Portfolio/mpi"
 
-if [ ! -f "$SRC/index.html" ]; then
+if [[ ! -f "$SRC/index.html" ]]; then
   echo "ERROR: $SRC/index.html not found. Run 'python src/run_pipeline.py' first." >&2
   exit 1
 fi
