@@ -13,7 +13,7 @@ import sys
 import re
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import WEIGHTS, BILLBOARD_MAX_WEEKS, SPOTIFY_STREAMS_MAX, LASTFM_MAX_PLAYCOUNT
+from config import WEIGHTS, SPOTIFY_STREAMS_MAX, LASTFM_MAX_PLAYCOUNT
 
 DATA = os.path.join(os.path.dirname(__file__), "../data")
 
