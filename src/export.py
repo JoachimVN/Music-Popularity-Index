@@ -62,7 +62,11 @@ def export():
     body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             background: #0f0f0f; color: #e8e8e8; padding: 2rem; }}
     h1 {{ font-size: 1.8rem; margin-bottom: 0.25rem; }}
-    .subtitle {{ color: #888; font-size: 0.85rem; margin-bottom: 2rem; }}
+    .subtitle {{ color: #888; font-size: 0.85rem; margin-bottom: 1.25rem; }}
+    .wip-banner {{ background: #2a2410; border: 1px solid #5c4d18; color: #e8c34a;
+                   padding: 0.6rem 0.9rem; border-radius: 6px; font-size: 0.85rem;
+                   margin-bottom: 2rem; }}
+    .wip-banner strong {{ color: #ffd75e; }}
     table {{ width: 100%; border-collapse: collapse; font-size: 0.88rem; }}
     th {{ text-align: left; padding: 0.6rem 0.8rem; border-bottom: 2px solid #333;
           color: #aaa; font-weight: 600; cursor: pointer; user-select: none; white-space: nowrap; }}
@@ -85,6 +89,7 @@ def export():
 <body>
   <h1>Music Popularity Index</h1>
   <p class="subtitle">Top {TOP_N} songs · Billboard Hot 100 (1958–present) · Spotify all-time streams · Era-normalized within a ±{BILLBOARD_ERA_HALF_WINDOW}-year window</p>
+  <div class="wip-banner"><strong>🚧 Work in progress</strong> — the scoring model is still being tuned, so these rankings will change.</div>
   <table id="table">
     <thead>
       <tr>

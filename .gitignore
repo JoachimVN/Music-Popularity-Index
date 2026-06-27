@@ -7,5 +7,8 @@ __pycache__/
 data/
 venv/
 .venv/
-output/
+# Build dir is ignored except the published pages, which are deployed to joavn.dev/mpi
+output/*
+!output/index.html
+!output/billboard.html
 /.vscode

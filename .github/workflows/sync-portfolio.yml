@@ -1,0 +1,41 @@
+name: Sync to Portfolio
+
+# Publishes the built pages to the portfolio repo (Vercel-deployed at joavn.dev),
+# serving the index at joavn.dev/mpi. Mirrors the same pattern CHORIDOR-web uses.
+# Requires a repo secret PORTFOLIO_TOKEN: a PAT with write access to JoachimVN/Portfolio.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'output/index.html'
+      - 'output/billboard.html'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone portfolio repo
+        env:
+          PORTFOLIO_TOKEN: ${{ secrets.PORTFOLIO_TOKEN }}
+        run: git clone "https://x-access-token:${PORTFOLIO_TOKEN}@github.com/JoachimVN/Portfolio.git" portfolio
+
+      - name: Sync built pages -> mpi/
+        run: |
+          rm -rf portfolio/mpi
+          mkdir -p portfolio/mpi
+          cp output/index.html portfolio/mpi/index.html
+          cp output/billboard.html portfolio/mpi/billboard.html
+
+      - name: Commit and push
+        run: |
+          cd portfolio
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add mpi/
+          git diff --staged --quiet || git commit -m "chore: sync MPI from Music-Popularity-Index@${{ github.sha }}"
+          git push
