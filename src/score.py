@@ -28,8 +28,14 @@ def normalize_title(t):
 
 def normalize_artist(a):
     a = str(a).lower().strip()
-    a = re.sub(r"\bfeat\..*", "", a)
-    a = re.sub(r"\bft\..*", "", a)
+    a = re.sub(r"\(.*", "", a)  # drop "(with ...)" / "(Remix)" style suffixes
+    # Strip featured-artist suffixes. Billboard spells these out ("The Weeknd
+    # Featuring Daft Punk") while kworb lists only the lead ("The Weeknd"), so we
+    # must catch the spelled-out "featuring"/"with" forms too, not just "feat."/
+    # "ft." — otherwise e.g. Starboy, One Dance, Uptown Funk never join their
+    # Spotify stream rows and rank far below where they belong.
+    a = re.sub(r"\b(feat\.?|ft\.?|featuring)\b.*", "", a)
+    a = re.sub(r"\bwith\b.*", "", a)
     a = re.sub(r"/.*", "", a)  # "A/B Band" → "A"; AC/DC → "ac" in both sources, still matches
     a = re.sub(r"[^\w\s]", "", a)
     return re.sub(r"\s+", " ", a).strip()
