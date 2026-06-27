@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import TOP_N
 
 SCORES = os.path.join(os.path.dirname(__file__), "../data/scores.csv")
+LINKS = os.path.join(os.path.dirname(__file__), "../data/spotify_links.csv")
 OUTPUT = os.path.join(os.path.dirname(__file__), "../output/index.html")
 
 
@@ -20,6 +21,11 @@ def export():
 
     df = pd.read_csv(SCORES, index_col=0).head(TOP_N)
 
+    links = {}
+    if os.path.exists(LINKS):
+        ldf = pd.read_csv(LINKS).fillna("")
+        links = {(r["title"], r["artist"]): r["spotify_url"] for _, r in ldf.iterrows()}
+
     rows_html = ""
     for rank, row in df.iterrows():
         year = f"{int(row['year'])}" if pd.notna(row.get("year")) else "—"
@@ -29,10 +35,16 @@ def export():
         lfm_plays = f"{int(row['playcount']):,}" if pd.notna(row.get("playcount")) else "—"
         score = row.get("final_score", 0)
 
+        sp_url = links.get((row["title"], row["artist"]), "")
+        title_cell = (
+            f'<a href="{sp_url}" target="_blank" rel="noopener">{row["title"]}</a>'
+            if sp_url else row["title"]
+        )
+
         rows_html += f"""
         <tr>
           <td class="rank">{rank}</td>
-          <td class="title">{row['title']}</td>
+          <td class="title">{title_cell}</td>
           <td class="artist">{row['artist']}</td>
           <td class="year">{year}</td>
           <td class="score">{score:.1f}</td>
@@ -61,6 +73,8 @@ def export():
     tr:hover td {{ background: #1a1a1a; }}
     .rank {{ color: #555; width: 3rem; }}
     .title {{ font-weight: 600; color: #fff; max-width: 260px; }}
+    .title a {{ color: #fff; text-decoration: none; }}
+    .title a:hover {{ color: #1db954; text-decoration: underline; }}
     .artist {{ color: #bbb; max-width: 200px; }}
     .year {{ color: #666; width: 4rem; }}
     .score {{ font-weight: 700; color: #1db954; }}
