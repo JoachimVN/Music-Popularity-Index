@@ -66,13 +66,12 @@ def load_billboard():
     df["key_artist"] = df["artist"].map(normalize_artist)
 
     # Count distinct chart weeks per song directly from the dataset rows.
-    # This is more accurate than the cumulative `weeks_on_chart` field, which
-    # can carry across re-entries inconsistently.
     chart_weeks_count = df.groupby(["key_title", "key_artist"])["date"].nunique().rename("bb_chart_weeks")
 
-    # Decade p75 computed on actual row counts (distinct weeks per song per decade)
+    # Use p90 per decade as the weeks ceiling — tighter than p75, so extreme
+    # streaming-era marathon runs don't dominate. Songs above p90 are capped.
     weeks_per_song = df.groupby(["key_title", "key_artist", "decade"])["date"].nunique().reset_index(name="wks")
-    decade_p75 = weeks_per_song.groupby("decade")["wks"].quantile(0.75).to_dict()
+    decade_p90 = weeks_per_song.groupby("decade")["wks"].quantile(0.90).to_dict()
 
     agg = df.groupby(["key_title", "key_artist"]).agg(
         title=("title", "first"),
@@ -83,16 +82,15 @@ def load_billboard():
     ).reset_index()
 
     agg = agg.join(chart_weeks_count, on=["key_title", "key_artist"])
-    agg["decade_p75"] = agg["decade"].map(decade_p75).clip(lower=1)
+    agg["decade_p90"] = agg["decade"].map(decade_p90).clip(lower=1)
 
-    # No cap — songs with exceptional runs naturally score higher.
-    # Normalize at the end so the best song in the dataset = 1.0.
-    era_weeks = agg["bb_chart_weeks"] / agg["decade_p75"]
+    # Weeks capped at p90: songs above the ceiling all score 1.0 on weeks.
+    # 60% peak (dominance in the moment), 40% weeks (longevity).
+    era_weeks = (agg["bb_chart_weeks"] / agg["decade_p90"]).clip(upper=1.0)
     agg["bb_score"] = (
-        0.3 * peak_score(agg["bb_peak"]) +
-        0.7 * era_weeks
+        0.6 * peak_score(agg["bb_peak"]) +
+        0.4 * era_weeks
     )
-    agg["bb_score"] /= agg["bb_score"].max()
     return agg
 
 
