@@ -13,7 +13,7 @@ import sys
 import re
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import WEIGHTS, SPOTIFY_STREAMS_MAX, LASTFM_MAX_PLAYCOUNT
+from config import WEIGHTS
 
 DATA = os.path.join(os.path.dirname(__file__), "../data")
 
@@ -30,6 +30,7 @@ def normalize_artist(a):
     a = str(a).lower().strip()
     a = re.sub(r"\bfeat\..*", "", a)
     a = re.sub(r"\bft\..*", "", a)
+    a = re.sub(r"/.*", "", a)  # "A/B Band" → "A"; AC/DC → "ac" in both sources, still matches
     a = re.sub(r"[^\w\s]", "", a)
     return re.sub(r"\s+", " ", a).strip()
 
@@ -98,21 +99,8 @@ def load_kworb():
     df = pd.read_csv(path)
     df["key_title"] = df["title"].map(normalize_title)
     df["key_artist"] = df["artist"].map(normalize_artist)
-    df["sp_score"] = np.clip(df["spotify_streams"] / SPOTIFY_STREAMS_MAX, 0, 1)
-    return df[["key_title", "key_artist", "title", "artist", "spotify_streams", "sp_score"]]
-
-
-def load_lastfm():
-    path = os.path.join(DATA, "lastfm_raw.csv")
-    if not os.path.exists(path):
-        print("WARNING: lastfm_raw.csv not found — Last.fm dimension skipped")
-        return pd.DataFrame()
-
-    df = pd.read_csv(path)
-    df["key_title"] = df["title"].map(normalize_title)
-    df["key_artist"] = df["artist"].map(normalize_artist)
-    df["lfm_score"] = np.clip(df["playcount"] / LASTFM_MAX_PLAYCOUNT, 0, 1)
-    return df[["key_title", "key_artist", "playcount", "listeners", "lfm_score"]]
+    # sp_score assigned after merge with Billboard (needs year for era normalisation)
+    return df[["key_title", "key_artist", "title", "artist", "spotify_streams"]]
 
 
 def _apply_weights(merged, available_dims):
@@ -127,9 +115,7 @@ def _apply_weights(merged, available_dims):
 def compute_scores(songs_only=False):
     bb = load_billboard()
     kworb = load_kworb()
-    lfm = load_lastfm()
 
-    # Build master song list from all available sources
     dfs = []
     if not bb.empty:
         dfs.append(bb[["key_title", "key_artist", "title", "artist"]])
@@ -148,7 +134,7 @@ def compute_scores(songs_only=False):
         print(f"Wrote {len(songs)} unique songs to {out}")
         return
 
-    # Merge all dimensions
+    # Merge Billboard then Spotify
     merged = songs
     if not bb.empty:
         merged = merged.merge(
@@ -157,18 +143,20 @@ def compute_scores(songs_only=False):
         )
     if not kworb.empty:
         merged = merged.merge(
-            kworb[["key_title", "key_artist", "spotify_streams", "sp_score"]],
+            kworb[["key_title", "key_artist", "spotify_streams"]],
             on=["key_title", "key_artist"], how="left"
         )
-    if not lfm.empty:
-        merged = merged.merge(lfm, on=["key_title", "key_artist"], how="left")
 
-    # Weighted score — redistribute weight for missing dimensions per song
-    dim_cols = {
-        "billboard": "bb_score",
-        "spotify_streams": "sp_score",
-        "lastfm": "lfm_score",
-    }
+    # Era-normalise Spotify streams: percentile rank within release decade.
+    # Songs missing a decade (kworb-only, no Billboard year) fall into a
+    # shared "unknown" bucket and are ranked among themselves.
+    if "spotify_streams" in merged.columns:
+        merged["decade"] = ((merged["year"].fillna(0) // 10) * 10).astype(int)
+        merged["sp_score"] = merged.groupby("decade")["spotify_streams"].rank(
+            ascending=True, pct=True, na_option="keep"
+        )
+
+    dim_cols = {"billboard": "bb_score", "spotify_streams": "sp_score"}
     available_dims = {k: v for k, v in dim_cols.items() if v in merged.columns}
     merged["final_score"] = _apply_weights(merged, available_dims)
 
