@@ -1,0 +1,5 @@
+spotipy
+billboard.py
+pandas
+requests
+python-dotenv
