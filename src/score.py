@@ -48,8 +48,9 @@ def load_billboard():
         print("WARNING: hot100.csv not found — Billboard dimension skipped")
         return pd.DataFrame()
 
-    df = pd.read_csv(path, usecols=["Date", "Song", "Artist", "Peak Position", "Weeks in Charts"])
+    df = pd.read_csv(path, usecols=["1Date", "Song", "Artist", "Peak Position", "Weeks in Charts"])
     df = df.rename(columns={
+        "1Date": "date",
         "Song": "title",
         "Artist": "artist",
         "Peak Position": "peak_pos",
@@ -57,24 +58,31 @@ def load_billboard():
     })
     df["peak_pos"] = pd.to_numeric(df["peak_pos"], errors="coerce")
     df["weeks_on_chart"] = pd.to_numeric(df["weeks_on_chart"], errors="coerce")
-    df = df.dropna(subset=["peak_pos", "weeks_on_chart"])
+    df["year"] = pd.to_datetime(df["date"], errors="coerce").dt.year
+    df["decade"] = (df["year"] // 10) * 10
+    df = df.dropna(subset=["peak_pos", "weeks_on_chart", "year"])
 
     df["key_title"] = df["title"].map(normalize_title)
     df["key_artist"] = df["artist"].map(normalize_artist)
 
-    df["year"] = pd.to_datetime(df["Date"], errors="coerce").dt.year
+    # p75 weeks per decade — the "ceiling" for a strong chart run in each era.
+    # A song needs 2× the decade p75 to score 1.0 on weeks, making era comparison fair.
+    decade_p75 = df.groupby("decade")["weeks_on_chart"].quantile(0.75).to_dict()
 
     agg = df.groupby(["key_title", "key_artist"]).agg(
         title=("title", "first"),
         artist=("artist", "first"),
         bb_peak=("peak_pos", "min"),
         bb_weeks=("weeks_on_chart", "max"),
-        year=("year", "min"),  # earliest chart appearance = debut year
+        year=("year", "min"),
+        decade=("decade", "first"),
     ).reset_index()
 
+    agg["decade_p75"] = agg["decade"].map(decade_p75).clip(lower=1)
+    era_weeks = (agg["bb_weeks"] / agg["decade_p75"]) / 2.0  # 2× p75 = score 1.0
     agg["bb_score"] = (
         0.5 * peak_score(agg["bb_peak"]) +
-        0.5 * weeks_score(agg["bb_weeks"], BILLBOARD_MAX_WEEKS)
+        0.5 * era_weeks.clip(upper=1.0)
     )
     return agg
 
