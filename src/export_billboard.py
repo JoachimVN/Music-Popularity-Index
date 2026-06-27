@@ -1,64 +1,48 @@
 """
-Generates output/index.html — a sortable table of the top N songs by composite score.
+Generates output/billboard.html — a pure Billboard Hot 100 era-normalized ranking.
+No Spotify or Last.fm — just chart performance adjusted for era inflation.
 """
 
 import pandas as pd
+import numpy as np
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import TOP_N
+from src.score import load_billboard
 
-SCORES = os.path.join(os.path.dirname(__file__), "../data/scores.csv")
-LINKS = os.path.join(os.path.dirname(__file__), "../data/spotify_links.csv")
-OUTPUT = os.path.join(os.path.dirname(__file__), "../output/index.html")
+OUTPUT = os.path.join(os.path.dirname(__file__), "../output/billboard.html")
+TOP_N = 200
 
 
 def export():
-    if not os.path.exists(SCORES):
-        print("ERROR: data/scores.csv not found. Run score.py first.")
-        return
-
-    df = pd.read_csv(SCORES, index_col=0).head(TOP_N)
-
-    links = {}
-    if os.path.exists(LINKS):
-        ldf = pd.read_csv(LINKS).fillna("")
-        links = {(r["title"], r["artist"]): r["spotify_url"] for _, r in ldf.iterrows()}
+    bb = load_billboard()
+    bb["score"] = (bb["bb_score"] * 100).round(1)
+    bb = bb.sort_values("score", ascending=False).reset_index(drop=True)
+    bb.index += 1
 
     rows_html = ""
-    for rank, row in df.iterrows():
-        year = f"{int(row['year'])}" if pd.notna(row.get("year")) else "—"
-        bb_peak = f"#{int(row['bb_peak'])}" if pd.notna(row.get("bb_peak")) else "—"
-        bb_chart_weeks = f"{int(row['bb_chart_weeks'])}w" if pd.notna(row.get("bb_chart_weeks")) else "—"
-        sp_streams = f"{int(row['spotify_streams']):,}" if pd.notna(row.get("spotify_streams")) else "—"
-        lfm_plays = f"{int(row['playcount']):,}" if pd.notna(row.get("playcount")) else "—"
-        score = row.get("final_score", 0)
-
-        sp_url = links.get((row["title"], row["artist"]), "")
-        title_cell = (
-            f'<a href="{sp_url}" target="_blank" rel="noopener">{row["title"]}</a>'
-            if sp_url else row["title"]
-        )
-
+    for rank, row in bb.head(TOP_N).iterrows():
+        year = int(row["year"]) if pd.notna(row.get("year")) else "—"
+        peak = f"#{int(row['bb_peak'])}" if pd.notna(row.get("bb_peak")) else "—"
+        weeks = int(row["bb_chart_weeks"]) if pd.notna(row.get("bb_chart_weeks")) else "—"
+        score = row["score"]
         rows_html += f"""
         <tr>
           <td class="rank">{rank}</td>
-          <td class="title">{title_cell}</td>
+          <td class="title">{row['title']}</td>
           <td class="artist">{row['artist']}</td>
           <td class="year">{year}</td>
-          <td class="score">{score:.1f}</td>
-          <td>{bb_peak}</td>
-          <td>{bb_chart_weeks}</td>
-          <td>{sp_streams}</td>
-          <td>{lfm_plays}</td>
+          <td class="score">{score}</td>
+          <td>{peak}</td>
+          <td>{weeks}w</td>
         </tr>"""
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Music Popularity Index</title>
+  <title>Billboard Hot 100 — Era-Normalized Index</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -72,21 +56,17 @@ def export():
     td {{ padding: 0.5rem 0.8rem; border-bottom: 1px solid #1e1e1e; }}
     tr:hover td {{ background: #1a1a1a; }}
     .rank {{ color: #555; width: 3rem; }}
-    .title {{ font-weight: 600; color: #fff; max-width: 260px; }}
-    .title a {{ color: #fff; text-decoration: none; }}
-    .title a:hover {{ color: #1db954; text-decoration: underline; }}
-    .artist {{ color: #bbb; max-width: 200px; }}
+    .title {{ font-weight: 600; color: #fff; max-width: 300px; }}
+    .artist {{ color: #bbb; max-width: 220px; }}
     .year {{ color: #666; width: 4rem; }}
     .score {{ font-weight: 700; color: #1db954; }}
     th.sorted-asc::after {{ content: " ▲"; }}
     th.sorted-desc::after {{ content: " ▼"; }}
-    .group-header {{ font-size: 0.75rem; color: #555; text-transform: uppercase;
-                     letter-spacing: 0.05em; padding: 0.4rem 0.8rem; }}
   </style>
 </head>
 <body>
-  <h1>Music Popularity Index</h1>
-  <p class="subtitle">Top {TOP_N} songs · Billboard Hot 100 (1958–present) · Spotify all-time streams · Last.fm plays</p>
+  <h1>Billboard Hot 100 — Era-Normalized</h1>
+  <p class="subtitle">Top {TOP_N} · Weeks scored relative to decade median · 30% peak position, 70% era-adjusted weeks · Re-entries counted</p>
   <table id="table">
     <thead>
       <tr>
@@ -95,16 +75,13 @@ def export():
         <th onclick="sortBy(2)">Artist</th>
         <th onclick="sortBy(3)">Year</th>
         <th onclick="sortBy(4)">Score</th>
-        <th onclick="sortBy(5)">BB Peak</th>
-        <th onclick="sortBy(6)">BB Weeks</th>
-        <th onclick="sortBy(7)">Spotify Streams</th>
-        <th onclick="sortBy(8)">Last.fm Plays</th>
+        <th onclick="sortBy(5)">Peak</th>
+        <th onclick="sortBy(6)">Chart Weeks</th>
       </tr>
     </thead>
     <tbody>{rows_html}
     </tbody>
   </table>
-
   <script>
     let sortCol = 0, sortDir = 1;
     function sortBy(col) {{

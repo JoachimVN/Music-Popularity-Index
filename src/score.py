@@ -65,25 +65,34 @@ def load_billboard():
     df["key_title"] = df["title"].map(normalize_title)
     df["key_artist"] = df["artist"].map(normalize_artist)
 
-    # p75 weeks per decade — the "ceiling" for a strong chart run in each era.
-    # A song needs 2× the decade p75 to score 1.0 on weeks, making era comparison fair.
-    decade_p75 = df.groupby("decade")["weeks_on_chart"].quantile(0.75).to_dict()
+    # Count distinct chart weeks per song directly from the dataset rows.
+    # This is more accurate than the cumulative `weeks_on_chart` field, which
+    # can carry across re-entries inconsistently.
+    chart_weeks_count = df.groupby(["key_title", "key_artist"])["date"].nunique().rename("bb_chart_weeks")
+
+    # Decade p75 computed on actual row counts (distinct weeks per song per decade)
+    weeks_per_song = df.groupby(["key_title", "key_artist", "decade"])["date"].nunique().reset_index(name="wks")
+    decade_p75 = weeks_per_song.groupby("decade")["wks"].quantile(0.75).to_dict()
 
     agg = df.groupby(["key_title", "key_artist"]).agg(
         title=("title", "first"),
         artist=("artist", "first"),
         bb_peak=("peak_pos", "min"),
-        bb_weeks=("weeks_on_chart", "max"),
         year=("year", "min"),
         decade=("decade", "first"),
     ).reset_index()
 
+    agg = agg.join(chart_weeks_count, on=["key_title", "key_artist"])
     agg["decade_p75"] = agg["decade"].map(decade_p75).clip(lower=1)
-    era_weeks = (agg["bb_weeks"] / agg["decade_p75"]) / 2.0  # 2× p75 = score 1.0
+
+    # No cap — songs with exceptional runs naturally score higher.
+    # Normalize at the end so the best song in the dataset = 1.0.
+    era_weeks = agg["bb_chart_weeks"] / agg["decade_p75"]
     agg["bb_score"] = (
-        0.5 * peak_score(agg["bb_peak"]) +
-        0.5 * era_weeks.clip(upper=1.0)
+        0.3 * peak_score(agg["bb_peak"]) +
+        0.7 * era_weeks
     )
+    agg["bb_score"] /= agg["bb_score"].max()
     return agg
 
 
@@ -150,7 +159,7 @@ def compute_scores(songs_only=False):
     merged = songs
     if not bb.empty:
         merged = merged.merge(
-            bb[["key_title", "key_artist", "bb_score", "bb_peak", "bb_weeks", "year"]],
+            bb[["key_title", "key_artist", "bb_score", "bb_peak", "bb_chart_weeks", "year"]],
             on=["key_title", "key_artist"], how="left"
         )
     if not kworb.empty:
