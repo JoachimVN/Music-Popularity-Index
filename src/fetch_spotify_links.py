@@ -28,6 +28,8 @@ def _nd(s):
     s = "".join(c for c in unicodedata.normalize("NFD", str(s)) if unicodedata.category(c) != "Mn")
     s = s.lower().strip()
     s = re.sub(r"\([^)]*\)", "", s)
+    s = re.sub(r"\[[^\]]*\]", "", s)
+    s = re.sub(r"\s+-\s+.*$", "", s)   # strip " - Remastered 2011", " - Live", etc.
     s = re.sub(r"[^\w\s]", "", s)
     return re.sub(r"\s+", " ", s).strip()
 
