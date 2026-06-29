@@ -22,6 +22,7 @@ def scrape():
     print(f"Fetching {URL} ...")
     resp = requests.get(URL, headers=HEADERS, timeout=20)
     resp.raise_for_status()
+    resp.encoding = "utf-8"
 
     soup = BeautifulSoup(resp.text, "lxml")
     table = soup.find("table")

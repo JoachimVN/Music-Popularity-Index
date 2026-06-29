@@ -214,13 +214,33 @@ def _left_merge(merged, df, cols):
     return merged.merge(df[["key_title", "key_artist"] + cols], on=["key_title", "key_artist"], how="left")
 
 
+# Platforms that only started tracking at a specific year. Songs released before
+# these dates couldn't have charted there, so we exclude those weights from the
+# denominator rather than penalising them for an absence beyond their control.
+# Spotify and YouTube are NOT listed here: kworb covers all eras, so absence
+# from those top lists is a genuine popularity signal, not an era artefact.
+_PLATFORM_START = {
+    "itunes_total": 2010,
+    "apple_total":  2017,
+}
+
+
 def _apply_weights(merged, available_dims):
-    # No redistribution: songs missing a dimension simply don't earn those points.
-    # Final normalization (divide by max) makes everything relative at the end.
-    scores = pd.Series(0.0, index=merged.index)
+    weighted_sum = pd.Series(0.0, index=merged.index)
+    denominator  = pd.Series(0.0, index=merged.index)
+    year = merged.get("year", pd.Series(0, index=merged.index)).fillna(0)
+
     for dim, col in available_dims.items():
-        scores += WEIGHTS[dim] * merged[col].fillna(0)
-    return scores
+        w = WEIGHTS[dim]
+        start = _PLATFORM_START.get(dim)
+        # Platform counts toward denominator only for songs released after it launched.
+        era_applicable = (year >= start) if start else pd.Series(True, index=merged.index)
+        denominator  += era_applicable * w
+        weighted_sum += merged[col].fillna(0) * w
+
+    # Normalise by era-appropriate weight; songs with no applicable platform get 0.
+    denom = denominator.where(denominator > 0, other=1.0)
+    return (weighted_sum / denom).where(denominator > 0, other=0.0)
 
 
 def compute_scores(songs_only=False):

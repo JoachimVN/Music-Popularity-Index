@@ -44,6 +44,7 @@ def main():
     if not quick:
         run("export.py")
         run("export_billboard.py")
+        run("export_streaming.py")
 
     if quick:
         suffix = " (quick mode)"
