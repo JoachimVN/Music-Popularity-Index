@@ -37,6 +37,8 @@ The runner does not scrape — run the fetchers manually when you need fresh sou
 python src/fetch_billboard.py     # scrapes Hot 100 weekly (resumable, ~875 requests)
 python src/fetch_kworb.py         # scrapes kworb.net all-time Spotify streams
 python src/fetch_youtube.py       # scrapes kworb.net all-time YouTube view counts
+python src/fetch_itunes.py        # scrapes kworb.net worldwide iTunes chart point totals
+python src/fetch_apple_music.py   # scrapes kworb.net Apple Music chart point totals
 ```
 
 Individual downstream steps (what the runner calls, in order):
@@ -55,10 +57,11 @@ This is a batch data pipeline with no tests or build system. All state lives in 
 
 **Data flow:**
 ```
-fetch_billboard.py  →  data/hot100.csv       ↘
-fetch_kworb.py      →  data/kworb_raw.csv    →  score.py → data/scores.csv ─┬─ export.py → output/index.html
-fetch_youtube.py    →  data/youtube_raw.csv  ↗                              ├─ fetch_spotify_links.py → data/spotify_links.csv
-                                                                             └─ export_csv.py → output/music_index_full.csv
+fetch_billboard.py    →  data/hot100.csv            ↘
+fetch_kworb.py        →  data/kworb_raw.csv          →  score.py → data/scores.csv ─┬─ export.py → output/index.html
+fetch_youtube.py      →  data/youtube_raw.csv        ↗                              ├─ fetch_spotify_links.py → data/spotify_links.csv
+fetch_itunes.py       →  data/itunes_raw.csv         ↗                              └─ export_csv.py → output/music_index_full.csv
+fetch_apple_music.py  →  data/apple_music_raw.csv   ↗
                                                              load_billboard() → export_billboard.py → output/billboard.html
 ```
 
@@ -71,7 +74,9 @@ chains score → fetch_spotify_links → export_csv → export → export_billbo
 - Billboard score: `0.6 × peak_pct + 0.4 × weeks_pct` (percentiles within the song's release decade)
 - Spotify score: percentile rank of `spotify_streams` within the song's release decade
 - YouTube score: percentile rank of `youtube_views` (top video per song) within the song's release decade
-- Composite: `WEIGHTS["billboard"] × bb_score + WEIGHTS["spotify_streams"] × sp_score + WEIGHTS["youtube_views"] × yt_score`, then normalized to 0–100
+- iTunes score: percentile rank of `itunes_total` (cumulative chart points since Aug 2010) within the song's release decade
+- Apple Music score: percentile rank of `apple_total` (cumulative chart points since Jul 2017) within the song's release decade
+- Composite: weighted sum of all available dimension scores, then normalized to 0–100
 - Weights and `TOP_N` are configured in `config.py`
 
 **Song matching across sources** uses normalized keys: titles have parentheticals and punctuation stripped; artists have featured-artist suffixes stripped. These are `key_title` and `key_artist` columns used for joins — not stored in output.

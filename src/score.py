@@ -180,6 +180,33 @@ def load_youtube():
     return df[["key_title", "key_artist", "title", "artist", "youtube_views"]]
 
 
+def _load_chart_points(filename, col, label):
+    path = os.path.join(DATA, filename)
+    if not os.path.exists(path):
+        print(f"WARNING: {filename} not found — {label} dimension skipped")
+        return pd.DataFrame()
+
+    df = pd.read_csv(path)
+    df["key_title"] = df["title"].map(normalize_title)
+    df["key_artist"] = df["artist"].map(normalize_artist)
+    return df[["key_title", "key_artist", "title", "artist", col]]
+
+
+def load_itunes():
+    return _load_chart_points("itunes_raw.csv", "itunes_total", "iTunes")
+
+
+def load_apple_music():
+    return _load_chart_points("apple_music_raw.csv", "apple_total", "Apple Music")
+
+
+def _left_merge(merged, df, cols):
+    """Left-join `df[cols]` onto `merged` on key columns; no-op when df is empty."""
+    if df.empty:
+        return merged
+    return merged.merge(df[["key_title", "key_artist"] + cols], on=["key_title", "key_artist"], how="left")
+
+
 def _apply_weights(merged, available_dims):
     # No redistribution: songs missing a dimension simply don't earn those points.
     # Final normalization (divide by max) makes everything relative at the end.
@@ -193,6 +220,8 @@ def compute_scores(songs_only=False):
     bb = load_billboard()
     kworb = load_kworb()
     youtube = load_youtube()
+    itunes = load_itunes()
+    apple = load_apple_music()
 
     dfs = []
     if not bb.empty:
@@ -201,6 +230,10 @@ def compute_scores(songs_only=False):
         dfs.append(kworb[["key_title", "key_artist", "title", "artist"]])
     if not youtube.empty:
         dfs.append(youtube[["key_title", "key_artist", "title", "artist"]])
+    if not itunes.empty:
+        dfs.append(itunes[["key_title", "key_artist", "title", "artist"]])
+    if not apple.empty:
+        dfs.append(apple[["key_title", "key_artist", "title", "artist"]])
 
     if not dfs:
         print("ERROR: No source data found. Run the fetchers first.")
@@ -214,41 +247,35 @@ def compute_scores(songs_only=False):
         print(f"Wrote {len(songs)} unique songs to {out}")
         return
 
-    # Merge Billboard, Spotify, YouTube
+    # Merge all sources
     merged = songs
-    if not bb.empty:
-        merged = merged.merge(
-            bb[["key_title", "key_artist", "bb_score", "bb_peak", "bb_chart_weeks", "year"]],
-            on=["key_title", "key_artist"], how="left"
-        )
-    if not kworb.empty:
-        merged = merged.merge(
-            kworb[["key_title", "key_artist", "spotify_streams"]],
-            on=["key_title", "key_artist"], how="left"
-        )
-    if not youtube.empty:
-        merged = merged.merge(
-            youtube[["key_title", "key_artist", "youtube_views"]],
-            on=["key_title", "key_artist"], how="left"
-        )
+    merged = _left_merge(merged, bb,      ["bb_score", "bb_peak", "bb_chart_weeks", "year"])
+    merged = _left_merge(merged, kworb,   ["spotify_streams"])
+    merged = _left_merge(merged, youtube, ["youtube_views"])
+    merged = _left_merge(merged, itunes,  ["itunes_total"])
+    merged = _left_merge(merged, apple,   ["apple_total"])
 
-    # Era-normalise Spotify and YouTube: percentile rank within release decade.
+    # Era-normalise all streaming/chart-point dimensions by release decade.
     # Songs missing a decade (source-only, no Billboard year) fall into a
     # shared "unknown" bucket and are ranked among themselves.
     merged["decade"] = ((merged["year"].fillna(0) // 10) * 10).astype(int)
-    if "spotify_streams" in merged.columns:
-        merged["sp_score"] = merged.groupby("decade")["spotify_streams"].rank(
-            ascending=True, pct=True, na_option="keep"
-        )
-    if "youtube_views" in merged.columns:
-        merged["yt_score"] = merged.groupby("decade")["youtube_views"].rank(
-            ascending=True, pct=True, na_option="keep"
-        )
+    for raw_col, score_col in [
+        ("spotify_streams", "sp_score"),
+        ("youtube_views",   "yt_score"),
+        ("itunes_total",    "itunes_score"),
+        ("apple_total",     "apple_score"),
+    ]:
+        if raw_col in merged.columns:
+            merged[score_col] = merged.groupby("decade")[raw_col].rank(
+                ascending=True, pct=True, na_option="keep"
+            )
 
     dim_cols = {
-        "billboard": "bb_score",
+        "billboard":      "bb_score",
         "spotify_streams": "sp_score",
-        "youtube_views": "yt_score",
+        "youtube_views":   "yt_score",
+        "itunes_total":    "itunes_score",
+        "apple_total":     "apple_score",
     }
     available_dims = {k: v for k, v in dim_cols.items() if v in merged.columns}
     merged["final_score"] = _apply_weights(merged, available_dims)
