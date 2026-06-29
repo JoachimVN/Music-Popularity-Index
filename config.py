@@ -29,4 +29,4 @@ BILLBOARD_ERA_HALF_WINDOW = 5
 BILLBOARD_PEAK_WEIGHT = 0.60
 
 # How many top songs to show in the output table
-TOP_N = 500
+TOP_N = 1000
