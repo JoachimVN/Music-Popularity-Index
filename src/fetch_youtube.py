@@ -21,7 +21,7 @@ URL     = "https://kworb.net/youtube/topvideos.html"
 OUTPUT  = os.path.join(os.path.dirname(__file__), "../data/youtube_raw.csv")
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-_FEAT_RE      = re.compile(r"[ \t]+(?:ft\.?|feat\.?|featuring)[ \t]+.*$", re.IGNORECASE)
+_FEAT_RE      = re.compile(r"[ \t](?:ft\.?|feat\.?|featuring)[ \t].*$", re.IGNORECASE)
 _META_RE      = re.compile(r"[\(\[].*$")
 # Curly/straight single or double quotes, plus CJK brackets
 _QUOTE_RE     = re.compile(
