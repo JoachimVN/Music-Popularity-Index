@@ -36,6 +36,7 @@ The runner does not scrape — run the fetchers manually when you need fresh sou
 ```bash
 python src/fetch_billboard.py     # scrapes Hot 100 weekly (resumable, ~875 requests)
 python src/fetch_kworb.py         # scrapes kworb.net all-time Spotify streams
+python src/fetch_youtube.py       # scrapes kworb.net all-time YouTube view counts
 ```
 
 Individual downstream steps (what the runner calls, in order):
@@ -54,11 +55,11 @@ This is a batch data pipeline with no tests or build system. All state lives in 
 
 **Data flow:**
 ```
-fetch_billboard.py  →  data/hot100.csv      ↘
-fetch_kworb.py      →  data/kworb_raw.csv   →  score.py → data/scores.csv ─┬─ export.py → output/index.html
-                                                                          ├─ fetch_spotify_links.py → data/spotify_links.csv
-                                                                          └─ export_csv.py → output/music_index_full.csv
-                                                            load_billboard() → export_billboard.py → output/billboard.html
+fetch_billboard.py  →  data/hot100.csv       ↘
+fetch_kworb.py      →  data/kworb_raw.csv    →  score.py → data/scores.csv ─┬─ export.py → output/index.html
+fetch_youtube.py    →  data/youtube_raw.csv  ↗                              ├─ fetch_spotify_links.py → data/spotify_links.csv
+                                                                             └─ export_csv.py → output/music_index_full.csv
+                                                             load_billboard() → export_billboard.py → output/billboard.html
 ```
 
 `export_csv.py` joins `data/scores.csv` with the cached `data/spotify_links.csv` into
@@ -66,14 +67,17 @@ fetch_kworb.py      →  data/kworb_raw.csv   →  score.py → data/scores.csv 
 chains score → fetch_spotify_links → export_csv → export → export_billboard.
 
 **Scoring logic (`src/score.py`):**
-- Both dimensions are era-normalized via within-decade percentile rank so songs from different eras are directly comparable.
+- All three streaming dimensions are era-normalized via within-decade percentile rank so songs from different eras are directly comparable.
 - Billboard score: `0.6 × peak_pct + 0.4 × weeks_pct` (percentiles within the song's release decade)
 - Spotify score: percentile rank of `spotify_streams` within the song's release decade
-- Composite: `WEIGHTS["billboard"] × bb_score + WEIGHTS["spotify_streams"] × sp_score`, then normalized to 0–100
+- YouTube score: percentile rank of `youtube_views` (top video per song) within the song's release decade
+- Composite: `WEIGHTS["billboard"] × bb_score + WEIGHTS["spotify_streams"] × sp_score + WEIGHTS["youtube_views"] × yt_score`, then normalized to 0–100
 - Weights and `TOP_N` are configured in `config.py`
 
 **Song matching across sources** uses normalized keys: titles have parentheticals and punctuation stripped; artists have featured-artist suffixes stripped. These are `key_title` and `key_artist` columns used for joins — not stored in output.
 
 **`fetch_billboard.py`** samples every 4 weeks (configurable via `SAMPLE_EVERY_N_WEEKS`) and saves progress every 50 batches so it can be safely interrupted and resumed. It writes to `data/billboard_raw.csv`; note that `score.py` reads from `data/hot100.csv` — if these differ, check which file is the authoritative scraped source.
+
+**`fetch_youtube.py`** scrapes kworb's top ~1000 YouTube videos. kworb puts featured artists and metadata in the title string (e.g. "Despacito ft. Daddy Yankee", "Shape of You (Official Music Video)") — these are stripped during scraping so the title matches Billboard's clean format. When a song has multiple videos in the top list, the highest view count is kept (see deduplication in `load_youtube()`).
 
 **`fetch_lastfm.py`** is currently non-functional: it imports `LAST_FM_API_KEY` from `config.py`, which no longer defines that key (Last.fm was dropped as a scoring dimension per recent commits).

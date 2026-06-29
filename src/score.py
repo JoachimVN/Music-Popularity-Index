@@ -1,8 +1,8 @@
 """
-Aggregates raw data from Billboard, kworb (Spotify streams), and Last.fm into
-a composite popularity score per song.
+Aggregates raw data from Billboard, kworb (Spotify streams), and kworb
+(YouTube views) into a composite popularity score per song.
 
-Run with --songs-only to emit data/songs.csv (needed before fetch_lastfm.py).
+Run with --songs-only to emit data/songs.csv.
 Run normally to compute final scores and write data/scores.csv.
 """
 
@@ -163,6 +163,23 @@ def load_kworb():
     return df[["key_title", "key_artist", "title", "artist", "spotify_streams"]]
 
 
+def load_youtube():
+    path = os.path.join(DATA, "youtube_raw.csv")
+    if not os.path.exists(path):
+        print("WARNING: youtube_raw.csv not found — YouTube dimension skipped")
+        return pd.DataFrame()
+
+    df = pd.read_csv(path)
+    df["key_title"] = df["title"].map(normalize_title)
+    df["key_artist"] = df["artist"].map(normalize_artist)
+    # A song can appear as multiple videos (music video + lyric video, etc.).
+    # Keep the highest view count so we capture the song's peak YouTube presence.
+    df = df.sort_values("youtube_views", ascending=False)
+    df = df.drop_duplicates(subset=["key_title", "key_artist"])
+    # yt_score assigned after merge with Billboard (needs year for era normalisation)
+    return df[["key_title", "key_artist", "title", "artist", "youtube_views"]]
+
+
 def _apply_weights(merged, available_dims):
     # No redistribution: songs missing a dimension simply don't earn those points.
     # Final normalization (divide by max) makes everything relative at the end.
@@ -175,12 +192,15 @@ def _apply_weights(merged, available_dims):
 def compute_scores(songs_only=False):
     bb = load_billboard()
     kworb = load_kworb()
+    youtube = load_youtube()
 
     dfs = []
     if not bb.empty:
         dfs.append(bb[["key_title", "key_artist", "title", "artist"]])
     if not kworb.empty:
         dfs.append(kworb[["key_title", "key_artist", "title", "artist"]])
+    if not youtube.empty:
+        dfs.append(youtube[["key_title", "key_artist", "title", "artist"]])
 
     if not dfs:
         print("ERROR: No source data found. Run the fetchers first.")
@@ -194,7 +214,7 @@ def compute_scores(songs_only=False):
         print(f"Wrote {len(songs)} unique songs to {out}")
         return
 
-    # Merge Billboard then Spotify
+    # Merge Billboard, Spotify, YouTube
     merged = songs
     if not bb.empty:
         merged = merged.merge(
@@ -206,17 +226,30 @@ def compute_scores(songs_only=False):
             kworb[["key_title", "key_artist", "spotify_streams"]],
             on=["key_title", "key_artist"], how="left"
         )
+    if not youtube.empty:
+        merged = merged.merge(
+            youtube[["key_title", "key_artist", "youtube_views"]],
+            on=["key_title", "key_artist"], how="left"
+        )
 
-    # Era-normalise Spotify streams: percentile rank within release decade.
-    # Songs missing a decade (kworb-only, no Billboard year) fall into a
+    # Era-normalise Spotify and YouTube: percentile rank within release decade.
+    # Songs missing a decade (source-only, no Billboard year) fall into a
     # shared "unknown" bucket and are ranked among themselves.
+    merged["decade"] = ((merged["year"].fillna(0) // 10) * 10).astype(int)
     if "spotify_streams" in merged.columns:
-        merged["decade"] = ((merged["year"].fillna(0) // 10) * 10).astype(int)
         merged["sp_score"] = merged.groupby("decade")["spotify_streams"].rank(
             ascending=True, pct=True, na_option="keep"
         )
+    if "youtube_views" in merged.columns:
+        merged["yt_score"] = merged.groupby("decade")["youtube_views"].rank(
+            ascending=True, pct=True, na_option="keep"
+        )
 
-    dim_cols = {"billboard": "bb_score", "spotify_streams": "sp_score"}
+    dim_cols = {
+        "billboard": "bb_score",
+        "spotify_streams": "sp_score",
+        "youtube_views": "yt_score",
+    }
     available_dims = {k: v for k, v in dim_cols.items() if v in merged.columns}
     merged["final_score"] = _apply_weights(merged, available_dims)
 
