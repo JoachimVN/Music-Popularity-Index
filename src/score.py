@@ -8,6 +8,7 @@ Run normally to compute final scores and write data/scores.csv.
 
 import pandas as pd
 import numpy as np
+import unicodedata
 import os
 import sys
 import re
@@ -18,8 +19,12 @@ from config import WEIGHTS, BILLBOARD_ERA_HALF_WINDOW, BILLBOARD_PEAK_WEIGHT
 DATA = os.path.join(os.path.dirname(__file__), "../data")
 
 
+def _strip_diacritics(s):
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+
 def normalize_title(t):
-    t = str(t).lower().strip()
+    t = _strip_diacritics(str(t).lower().strip())
     t = re.sub(r"\([^\)]*\)", "", t)
     t = re.sub(r"\[[^\]]*\]", "", t)
     t = re.sub(r"[^\w\s]", "", t)
@@ -27,7 +32,7 @@ def normalize_title(t):
 
 
 def normalize_artist(a):
-    a = str(a).lower().strip()
+    a = _strip_diacritics(str(a).lower().strip())
     a = re.sub(r"\(.*", "", a)  # drop "(with ...)" / "(Remix)" style suffixes
     # Strip collaboration suffixes. kworb always lists the primary artist only,
     # while Billboard spells out all collaborators in several formats:
@@ -35,10 +40,13 @@ def normalize_artist(a):
     #   "with"                    — e.g. "Sam Smith with Calvin Harris"
     #   ", X"                     — e.g. "Cardi B, Bad Bunny & J Balvin"
     #   "& X" / "x X"            — e.g. "Lady Gaga & Bruno Mars", "Jawsh 685 x Jason Derulo"
+    #   "vs. X"                   — e.g. "Lana Del Rey vs. Cedric Gervais" (remix credits)
     a = re.sub(r"\b(feat\.?|ft\.?|featuring)\b.*", "", a)
     a = re.sub(r"\bwith\b.*", "", a)
+    a = re.sub(r"\bvs\.?\b.*", "", a)
     a = re.sub(r",.*", "", a)
-    a = re.sub(r"\s+[&x]\s+.*", "", a)
+    # Require a non-whitespace char after & or x so "Lil Nas X" isn't eaten
+    a = re.sub(r"\s+[&x]\s+\S.*", "", a)
     a = re.sub(r"/.*", "", a)  # "A/B Band" → "A"; AC/DC → "ac" in both sources, still matches
     a = re.sub(r"[^\w\s]", "", a)
     return re.sub(r"\s+", " ", a).strip()
@@ -236,7 +244,7 @@ def _apply_weights(merged, available_dims):
         # Platform counts toward denominator only for songs released after it launched.
         era_applicable = (year >= start) if start else pd.Series(True, index=merged.index)
         denominator  += era_applicable * w
-        weighted_sum += merged[col].fillna(0) * w
+        weighted_sum += era_applicable * merged[col].fillna(0) * w
 
     # Normalise by era-appropriate weight; songs with no applicable platform get 0.
     denom = denominator.where(denominator > 0, other=1.0)
