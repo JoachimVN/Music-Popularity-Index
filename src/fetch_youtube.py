@@ -3,11 +3,11 @@ Scrapes kworb.net/youtube/topvideos.html for all-time YouTube view counts.
 Output: data/youtube_raw.csv  (artist, title, youtube_views)
 
 kworb uses several separator formats between artist and title:
-  "Artist - Title"   (regular hyphen  — most common)
-  "Artist – Title"   (em dash)
+  "Artist - Title"   (regular hyphen -- most common)
+  "Artist - Title"   (em dash)
   "Artist | Title"   (pipe)
   "Artist: Title"    (colon)
-  "Artist 'Title' …" (title in quotes, e.g. BTS uploads)
+  "Artist 'Title' ..." (title in quotes, e.g. BTS uploads)
 Featured-artist suffixes and metadata tags are stripped from titles.
 """
 
@@ -21,9 +21,16 @@ URL     = "https://kworb.net/youtube/topvideos.html"
 OUTPUT  = os.path.join(os.path.dirname(__file__), "../data/youtube_raw.csv")
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-_FEAT_RE  = re.compile(r'\s+(?:ft\.?|feat\.?|featuring)\s+.*$', re.IGNORECASE)
-_META_RE  = re.compile(r'\s*[\(\[].*$')
-_QUOTE_RE = re.compile(r"['‘’“”]([^'‘’“”]+)['‘’“”]")
+_FEAT_RE      = re.compile(r"\s+(?:ft\.?|feat\.?|featuring)\s+.*$", re.IGNORECASE)
+_META_RE      = re.compile(r"\s*[\(\[].*$")
+# Curly/straight single or double quotes, plus CJK brackets
+_QUOTE_RE     = re.compile(
+    u"[‘’‚‛“”„‟「」『』']"
+    u"([^‘’‚‛“”„‟「」『』']+)"
+    u"[‘’‚‛“”„‟「」『』']"
+)
+# Strips "[MV]", "(MV)", "[Official]" etc. from the front of a raw string
+_MV_PREFIX_RE = re.compile(r"^\s*[\[\(][^\]\)]{0,10}[\]\)]\s*")
 
 
 def clean_title(title):
@@ -39,23 +46,35 @@ def parse_artist_title(raw):
         a, t = raw.split(" - ", 1)
         return a.strip(), clean_title(t.strip())
 
-    # 2. Em dash: "Artist – Title"
+    # 2. Em dash or en dash
     if " – " in raw or " — " in raw:
         sep = " – " if " – " in raw else " — "
         a, t = raw.split(sep, 1)
         return a.strip(), clean_title(t.strip())
 
-    # 3. Pipe: "Artist | Title"
+    # 3. Double pipe: "SHAKIRA || BZRP Music Sessions #53"
+    if " || " in raw:
+        a, t = raw.split(" || ", 1)
+        return a.strip(), clean_title(t.strip())
+
+    # 4. Pipe: "Artist | Title"
     if " | " in raw:
         a, t = raw.split(" | ", 1)
         return a.strip(), clean_title(t.strip())
 
-    # 4. Colon: "Artist: Title"
+    # 5. Underscore with spaces after stripping [MV] prefix:
+    #    "[MV] BTS(방탄소년단) _ DOPE(쩔어)"
+    stripped = _MV_PREFIX_RE.sub("", raw)
+    if " _ " in stripped:
+        a, t = stripped.split(" _ ", 1)
+        return a.strip(), clean_title(t.strip())
+
+    # 6. Colon: "Artist: Title"
     if ": " in raw:
         a, t = raw.split(": ", 1)
         return a.strip(), clean_title(t.strip())
 
-    # 5. Quoted title: "BTS (방탄소년단) 'Dynamite' Official MV"
+    # 7. Quoted title (curly/CJK quotes): "BTS 'Dynamite' Official MV"
     m = _QUOTE_RE.search(raw)
     if m:
         title  = m.group(1).strip()
@@ -71,7 +90,7 @@ def parse_views(s):
 
 
 def scrape():
-    print(f"Fetching {URL} ...")
+    print("Fetching {} ...".format(URL))
     resp = requests.get(URL, headers=HEADERS, timeout=20)
     resp.raise_for_status()
     resp.encoding = "utf-8"
@@ -102,7 +121,7 @@ def scrape():
 
     df = pd.DataFrame(records)
     df.to_csv(OUTPUT, index=False)
-    print(f"Saved {len(df)} videos to {OUTPUT} ({skipped} unparseable rows skipped)")
+    print("Saved {} videos to {} ({} unparseable rows skipped)".format(len(df), OUTPUT, skipped))
     print("\nTop 5:")
     print(df.head().to_string(index=False))
     return df
