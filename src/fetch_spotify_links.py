@@ -1,8 +1,12 @@
 """
 Searches Spotify for the top N scored songs and caches their track URLs.
 Output: data/spotify_links.csv  (title, artist, spotify_url)
+
+Pass --force to re-fetch all songs, ignoring the cache (useful after fixing
+search logic or when existing links point to wrong tracks).
 """
 
+import re
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import pandas as pd
@@ -16,34 +20,72 @@ from config import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, TOP_N
 SCORES = os.path.join(os.path.dirname(__file__), "../data/scores.csv")
 OUTPUT = os.path.join(os.path.dirname(__file__), "../data/spotify_links.csv")
 
+# Billboard uses "Artist Featuring Guest" — Spotify only knows "Artist".
+_FEAT_RE = re.compile(r'\s+[Ff]eaturing\s+.*$|\s+[Ff]eat\.?\s+.*$|\s+[Ff]t\.?\s+.*$')
+
+
+def _main_artist(artist):
+    """Return the primary artist name, dropping any 'Featuring ...' suffix."""
+    return _FEAT_RE.sub("", artist).strip()
+
+
+def _artist_matches(track, main_artist):
+    """True if any of the track's credited artists resembles the main artist."""
+    main_lower = main_artist.lower()
+    for a in track["artists"]:
+        name = a["name"].lower()
+        if main_lower in name or name in main_lower:
+            return True
+    return False
+
+
+def _best(items, main_artist):
+    """
+    From a list of candidate tracks pick the best one:
+    1. Prefer tracks whose artist matches the expected main artist.
+    2. Among those, prefer the highest Spotify popularity (original > cover/remix).
+    """
+    matched = [t for t in items if _artist_matches(t, main_artist)]
+    pool = matched if matched else items
+    return max(pool, key=lambda t: t["popularity"])
+
 
 def get_spotify_url(sp, title, artist):
-    query = f'track:"{title}" artist:"{artist}"'
-    try:
-        results = sp.search(q=query, type="track", limit=1)
-        items = results["tracks"]["items"]
-        if items:
-            return items[0]["external_urls"]["spotify"]
-    except Exception:
-        pass
-    # Fallback: broader search without field filters
-    try:
-        results = sp.search(q=f"{title} {artist}", type="track", limit=1)
-        items = results["tracks"]["items"]
-        if items:
-            return items[0]["external_urls"]["spotify"]
-    except Exception:
-        pass
+    main = _main_artist(artist)
+
+    # Strategy 1: strict field filter with main artist (most precise)
+    queries = [f'track:"{title}" artist:"{main}"']
+    # Strategy 2: strict field filter with full Billboard artist (handles group names)
+    if main != artist:
+        queries.append(f'track:"{title}" artist:"{artist}"')
+    # Strategy 3 & 4: broad keyword search
+    queries += [f"{title} {main}", f"{title} {artist}"]
+
+    for q in queries:
+        try:
+            results = sp.search(q=q, type="track", limit=5)
+            items = results["tracks"]["items"]
+            if items:
+                track = _best(items, main)
+                return track["external_urls"]["spotify"]
+        except Exception:
+            pass
+
     return None
 
 
-def fetch_all():
+def fetch_all(force=False):
     if not os.path.exists(SCORES):
         print("ERROR: scores.csv not found. Run score.py first.")
         return
 
     scores = pd.read_csv(SCORES, index_col=0).head(TOP_N)
-    existing = pd.read_csv(OUTPUT) if os.path.exists(OUTPUT) else pd.DataFrame()
+
+    if force or not os.path.exists(OUTPUT):
+        existing = pd.DataFrame()
+    else:
+        existing = pd.read_csv(OUTPUT)
+
     done = set(zip(existing["title"], existing["artist"])) if not existing.empty else set()
 
     sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
@@ -53,7 +95,7 @@ def fetch_all():
 
     rows = []
     todo = [(r["title"], r["artist"]) for _, r in scores.iterrows() if (r["title"], r["artist"]) not in done]
-    print(f"Fetching Spotify links for {len(todo)} songs...")
+    print(f"Fetching Spotify links for {len(todo)} songs{' (full refresh)' if force else ''}...")
 
     for i, (title, artist) in enumerate(todo, 1):
         url = get_spotify_url(sp, title, artist)
@@ -72,4 +114,4 @@ def fetch_all():
 
 
 if __name__ == "__main__":
-    fetch_all()
+    fetch_all(force="--force" in sys.argv)
