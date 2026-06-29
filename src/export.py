@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import TOP_N, BILLBOARD_ERA_HALF_WINDOW
+from src.utils import artist_html
 
 SCORES = os.path.join(os.path.dirname(__file__), "../data/scores.csv")
 LINKS = os.path.join(os.path.dirname(__file__), "../data/spotify_links.csv")
@@ -45,7 +46,7 @@ def export():
         <tr>
           <td class="rank">{rank}</td>
           <td class="title">{title_cell}</td>
-          <td class="artist">{row['artist']}</td>
+          <td class="artist">{artist_html(row['artist'])}</td>
           <td class="year">{year}</td>
           <td class="score">{score:.1f}</td>
           <td>{bb_peak}</td>
@@ -84,6 +85,7 @@ def export():
     .title a {{ color: #fff; text-decoration: none; }}
     .title a:hover {{ color: #1db954; text-decoration: underline; }}
     .artist {{ color: #bbb; max-width: 200px; }}
+    .feat {{ color: #666; }}
     .year {{ color: #666; width: 4rem; }}
     .score {{ font-weight: 700; color: #1db954; }}
     .sort-btn.sorted-asc::after {{ content: " ▲"; }}

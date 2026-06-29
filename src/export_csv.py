@@ -11,6 +11,7 @@ import sys
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.utils import artist_csv
 
 BASE = os.path.dirname(__file__)
 SCORES = os.path.join(BASE, "../data/scores.csv")
@@ -47,6 +48,8 @@ def main():
         merged["spotify_url"] = pd.NA
 
     merged = merged[COLUMNS]
+    merged = merged.copy()
+    merged["artist"] = merged["artist"].map(artist_csv)
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
     merged.to_csv(OUTPUT)
 
