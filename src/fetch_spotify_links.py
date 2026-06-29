@@ -21,7 +21,7 @@ SCORES = os.path.join(os.path.dirname(__file__), "../data/scores.csv")
 OUTPUT = os.path.join(os.path.dirname(__file__), "../data/spotify_links.csv")
 
 # Billboard uses "Artist Featuring Guest" — Spotify only knows "Artist".
-_FEAT_RE = re.compile(r'\s+[Ff]eaturing\s+.*$|\s+[Ff]eat\.?\s+.*$|\s+[Ff]t\.?\s+.*$')
+_FEAT_RE = re.compile(r'\s+(?:featuring|feat\.?|ft\.?)\s+.*$', re.IGNORECASE)
 
 
 def _main_artist(artist):

@@ -45,7 +45,12 @@ def main():
         run("export.py")
         run("export_billboard.py")
 
-    suffix = " (quick mode)" if quick else (" (links refreshed)" if force_links else "")
+    if quick:
+        suffix = " (quick mode)"
+    elif force_links:
+        suffix = " (links refreshed)"
+    else:
+        suffix = ""
     print(f"\nPipeline complete.{suffix}")
 
 
