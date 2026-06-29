@@ -29,7 +29,7 @@ def _nd(s):
     s = s.lower().strip()
     s = re.sub(r"\([^)]*\)", "", s)
     s = re.sub(r"\[[^\]]*\]", "", s)
-    s = re.sub(r"\s+-\s+.*$", "", s)   # strip " - Remastered 2011", " - Live", etc.
+    s = re.sub(r" - .*$", "", s)   # strip " - Remastered 2011", " - Live", etc.
     s = re.sub(r"[^\w\s]", "", s)
     return re.sub(r"\s+", " ", s).strip()
 

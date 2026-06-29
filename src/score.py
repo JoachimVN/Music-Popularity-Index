@@ -46,7 +46,7 @@ def normalize_artist(a):
     a = re.sub(r"\bvs\.?\b.*", "", a)
     a = re.sub(r",.*", "", a)
     # Require a non-whitespace char after & or x so "Lil Nas X" isn't eaten
-    a = re.sub(r"\s+[&x]\s+\S.*", "", a)
+    a = re.sub(r"[ \t]+[&x][ \t]+\S.*", "", a)
     a = re.sub(r"/.*", "", a)  # "A/B Band" → "A"; AC/DC → "ac" in both sources, still matches
     a = re.sub(r"[^\w\s]", "", a)
     return re.sub(r"\s+", " ", a).strip()

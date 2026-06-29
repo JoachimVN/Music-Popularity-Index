@@ -1,6 +1,6 @@
 import re
 
-_FEAT_RE = re.compile(r'\s+[Ff]eaturing\s+|\s+[Ff]eat\.?\s+|\s+[Ff]t\.?\s+')
+_FEAT_RE = re.compile(r'[ \t]+(?:featuring|feat\.?|ft\.?)[ \t]+', re.IGNORECASE)
 
 
 def split_artists(artist):
