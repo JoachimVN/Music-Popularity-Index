@@ -65,7 +65,7 @@ def export_platform(df, p):
         return
 
     sub = df[df[raw_col].notna()].copy()
-    sub = sub.sort_values(score_col, ascending=False).head(TOP_N).reset_index(drop=True)
+    sub = sub.sort_values(raw_col, ascending=False).head(TOP_N).reset_index(drop=True)
     sub.index += 1
 
     rows_html = ""
@@ -118,7 +118,7 @@ def export_platform(df, p):
 </head>
 <body>
   <h1>{p['name']} — Era-Normalized</h1>
-  <p class="subtitle">Top {TOP_N} · {p['coverage']} · Era score = percentile within release decade · sorted by era score</p>
+  <p class="subtitle">Top {TOP_N} · {p['coverage']} · Era score = percentile within release decade · sorted by {p['label'].lower()}</p>
   <table id="table">
     <thead>
       <tr>
