@@ -1,7 +1,7 @@
 """
-Scrapes kworb.net/spotify/songs.html for all-time Spotify stream counts.
-Returns the top 2500 most-streamed songs of all time.
-Output: data/kworb_raw.csv
+Scrapes kworb.net/ww/totals.html for worldwide iTunes chart point totals.
+"Total" is cumulative chart points since August 2010, not download counts.
+Output: data/itunes_raw.csv  (artist, title, itunes_total)
 """
 
 import requests
@@ -9,12 +9,12 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import os
 
-URL = "https://kworb.net/spotify/songs.html"
-OUTPUT = os.path.join(os.path.dirname(__file__), "../data/kworb_raw.csv")
+URL = "https://kworb.net/ww/totals.html"
+OUTPUT = os.path.join(os.path.dirname(__file__), "../data/itunes_raw.csv")
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 
-def parse_streams(s):
+def parse_number(s):
     return int(s.replace(",", "").strip())
 
 
@@ -31,22 +31,21 @@ def scrape():
     records = []
     for row in rows:
         cols = row.find_all("td")
-        if len(cols) < 2:
+        if len(cols) < 5:
             continue
 
         raw = cols[0].get_text(strip=True)
-        # Split on first " - " only; handles "AC/DC - Back In Black" etc.
         parts = raw.split(" - ", 1)
         if len(parts) != 2:
             continue
         artist, title = parts[0].strip(), parts[1].strip()
 
         try:
-            streams = parse_streams(cols[1].get_text())
+            total = parse_number(cols[4].get_text())
         except ValueError:
             continue
 
-        records.append({"artist": artist, "title": title, "spotify_streams": streams})
+        records.append({"artist": artist, "title": title, "itunes_total": total})
 
     df = pd.DataFrame(records)
     df.to_csv(OUTPUT, index=False)

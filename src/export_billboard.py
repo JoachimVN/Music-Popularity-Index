@@ -10,6 +10,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.score import load_billboard
+from src.utils import artist_html
 from config import BILLBOARD_ERA_HALF_WINDOW, BILLBOARD_PEAK_WEIGHT
 
 OUTPUT = os.path.join(os.path.dirname(__file__), "../output/billboard.html")
@@ -32,7 +33,7 @@ def export():
         <tr>
           <td class="rank">{rank}</td>
           <td class="title">{row['title']}</td>
-          <td class="artist">{row['artist']}</td>
+          <td class="artist">{artist_html(row['artist'])}</td>
           <td class="year">{year}</td>
           <td class="score">{score}</td>
           <td>{peak}</td>
@@ -61,6 +62,7 @@ def export():
     .rank {{ color: #555; width: 3rem; }}
     .title {{ font-weight: 600; color: #fff; max-width: 300px; }}
     .artist {{ color: #bbb; max-width: 220px; }}
+    .feat {{ color: #666; }}
     .year {{ color: #666; width: 4rem; }}
     .score {{ font-weight: 700; color: #1db954; }}
     .sort-btn.sorted-asc::after {{ content: " ▲"; }}

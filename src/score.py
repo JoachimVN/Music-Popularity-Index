@@ -1,13 +1,14 @@
 """
-Aggregates raw data from Billboard, kworb (Spotify streams), and Last.fm into
-a composite popularity score per song.
+Aggregates raw data from Billboard, kworb (Spotify streams), and kworb
+(YouTube views) into a composite popularity score per song.
 
-Run with --songs-only to emit data/songs.csv (needed before fetch_lastfm.py).
+Run with --songs-only to emit data/songs.csv.
 Run normally to compute final scores and write data/scores.csv.
 """
 
 import pandas as pd
 import numpy as np
+import unicodedata
 import os
 import sys
 import re
@@ -18,8 +19,12 @@ from config import WEIGHTS, BILLBOARD_ERA_HALF_WINDOW, BILLBOARD_PEAK_WEIGHT
 DATA = os.path.join(os.path.dirname(__file__), "../data")
 
 
+def _strip_diacritics(s):
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+
 def normalize_title(t):
-    t = str(t).lower().strip()
+    t = _strip_diacritics(str(t).lower().strip())
     t = re.sub(r"\([^\)]*\)", "", t)
     t = re.sub(r"\[[^\]]*\]", "", t)
     t = re.sub(r"[^\w\s]", "", t)
@@ -27,15 +32,21 @@ def normalize_title(t):
 
 
 def normalize_artist(a):
-    a = str(a).lower().strip()
+    a = _strip_diacritics(str(a).lower().strip())
     a = re.sub(r"\(.*", "", a)  # drop "(with ...)" / "(Remix)" style suffixes
-    # Strip featured-artist suffixes. Billboard spells these out ("The Weeknd
-    # Featuring Daft Punk") while kworb lists only the lead ("The Weeknd"), so we
-    # must catch the spelled-out "featuring"/"with" forms too, not just "feat."/
-    # "ft." — otherwise e.g. Starboy, One Dance, Uptown Funk never join their
-    # Spotify stream rows and rank far below where they belong.
+    # Strip collaboration suffixes. kworb always lists the primary artist only,
+    # while Billboard spells out all collaborators in several formats:
+    #   "feat."/"ft."/"featuring" — e.g. "The Weeknd Featuring Daft Punk"
+    #   "with"                    — e.g. "Sam Smith with Calvin Harris"
+    #   ", X"                     — e.g. "Cardi B, Bad Bunny & J Balvin"
+    #   "& X" / "x X"            — e.g. "Lady Gaga & Bruno Mars", "Jawsh 685 x Jason Derulo"
+    #   "vs. X"                   — e.g. "Lana Del Rey vs. Cedric Gervais" (remix credits)
     a = re.sub(r"\b(feat\.?|ft\.?|featuring)\b.*", "", a)
     a = re.sub(r"\bwith\b.*", "", a)
+    a = re.sub(r"\bvs\.?\b.*", "", a)
+    a = re.sub(r",.*", "", a)
+    # Require a non-whitespace char after & or x so "Lil Nas X" isn't eaten
+    a = re.sub(r"[ \t][&x][ \t]\S.*", "", a)
     a = re.sub(r"/.*", "", a)  # "A/B Band" → "A"; AC/DC → "ac" in both sources, still matches
     a = re.sub(r"[^\w\s]", "", a)
     return re.sub(r"\s+", " ", a).strip()
@@ -159,28 +170,105 @@ def load_kworb():
     df = pd.read_csv(path)
     df["key_title"] = df["title"].map(normalize_title)
     df["key_artist"] = df["artist"].map(normalize_artist)
+    df = df.sort_values("spotify_streams", ascending=False).drop_duplicates(subset=["key_title", "key_artist"])
     # sp_score assigned after merge with Billboard (needs year for era normalisation)
     return df[["key_title", "key_artist", "title", "artist", "spotify_streams"]]
 
 
+def load_youtube():
+    path = os.path.join(DATA, "youtube_raw.csv")
+    if not os.path.exists(path):
+        print("WARNING: youtube_raw.csv not found — YouTube dimension skipped")
+        return pd.DataFrame()
+
+    df = pd.read_csv(path)
+    df["key_title"] = df["title"].map(normalize_title)
+    df["key_artist"] = df["artist"].map(normalize_artist)
+    # A song can appear as multiple videos (music video + lyric video, etc.).
+    # Keep the highest view count so we capture the song's peak YouTube presence.
+    df = df.sort_values("youtube_views", ascending=False)
+    df = df.drop_duplicates(subset=["key_title", "key_artist"])
+    # yt_score assigned after merge with Billboard (needs year for era normalisation)
+    return df[["key_title", "key_artist", "title", "artist", "youtube_views"]]
+
+
+def _load_chart_points(filename, col, label):
+    path = os.path.join(DATA, filename)
+    if not os.path.exists(path):
+        print(f"WARNING: {filename} not found — {label} dimension skipped")
+        return pd.DataFrame()
+
+    df = pd.read_csv(path)
+    df["key_title"] = df["title"].map(normalize_title)
+    df["key_artist"] = df["artist"].map(normalize_artist)
+    # After normalization multiple rows can share the same key (e.g. original
+    # and remix both map to the primary artist). Keep the highest value.
+    df = df.sort_values(col, ascending=False).drop_duplicates(subset=["key_title", "key_artist"])
+    return df[["key_title", "key_artist", "title", "artist", col]]
+
+
+def load_itunes():
+    return _load_chart_points("itunes_raw.csv", "itunes_total", "iTunes")
+
+
+def load_apple_music():
+    return _load_chart_points("apple_music_raw.csv", "apple_total", "Apple Music")
+
+
+def _left_merge(merged, df, cols):
+    """Left-join `df[cols]` onto `merged` on key columns; no-op when df is empty."""
+    if df.empty:
+        return merged
+    return merged.merge(df[["key_title", "key_artist"] + cols], on=["key_title", "key_artist"], how="left")
+
+
+# Platforms that only started tracking at a specific year. Songs released before
+# these dates couldn't have charted there, so we exclude those weights from the
+# denominator rather than penalising them for an absence beyond their control.
+# Spotify and YouTube are NOT listed here: kworb covers all eras, so absence
+# from those top lists is a genuine popularity signal, not an era artefact.
+_PLATFORM_START = {
+    "itunes_total": 2010,
+    "apple_total":  2017,
+}
+
+
 def _apply_weights(merged, available_dims):
-    # No redistribution: songs missing a dimension simply don't earn those points.
-    # Final normalization (divide by max) makes everything relative at the end.
-    scores = pd.Series(0.0, index=merged.index)
+    weighted_sum = pd.Series(0.0, index=merged.index)
+    denominator  = pd.Series(0.0, index=merged.index)
+    year = merged.get("year", pd.Series(0, index=merged.index)).fillna(0)
+
     for dim, col in available_dims.items():
-        scores += WEIGHTS[dim] * merged[col].fillna(0)
-    return scores
+        w = WEIGHTS[dim]
+        start = _PLATFORM_START.get(dim)
+        # Platform counts toward denominator only for songs released after it launched.
+        era_applicable = (year >= start) if start else pd.Series(True, index=merged.index)
+        denominator  += era_applicable * w
+        weighted_sum += era_applicable * merged[col].fillna(0) * w
+
+    # Normalise by era-appropriate weight; songs with no applicable platform get 0.
+    denom = denominator.where(denominator > 0, other=1.0)
+    return (weighted_sum / denom).where(denominator > 0, other=0.0)
 
 
 def compute_scores(songs_only=False):
     bb = load_billboard()
     kworb = load_kworb()
+    youtube = load_youtube()
+    itunes = load_itunes()
+    apple = load_apple_music()
 
     dfs = []
     if not bb.empty:
         dfs.append(bb[["key_title", "key_artist", "title", "artist"]])
     if not kworb.empty:
         dfs.append(kworb[["key_title", "key_artist", "title", "artist"]])
+    if not youtube.empty:
+        dfs.append(youtube[["key_title", "key_artist", "title", "artist"]])
+    if not itunes.empty:
+        dfs.append(itunes[["key_title", "key_artist", "title", "artist"]])
+    if not apple.empty:
+        dfs.append(apple[["key_title", "key_artist", "title", "artist"]])
 
     if not dfs:
         print("ERROR: No source data found. Run the fetchers first.")
@@ -194,29 +282,36 @@ def compute_scores(songs_only=False):
         print(f"Wrote {len(songs)} unique songs to {out}")
         return
 
-    # Merge Billboard then Spotify
+    # Merge all sources
     merged = songs
-    if not bb.empty:
-        merged = merged.merge(
-            bb[["key_title", "key_artist", "bb_score", "bb_peak", "bb_chart_weeks", "year"]],
-            on=["key_title", "key_artist"], how="left"
-        )
-    if not kworb.empty:
-        merged = merged.merge(
-            kworb[["key_title", "key_artist", "spotify_streams"]],
-            on=["key_title", "key_artist"], how="left"
-        )
+    merged = _left_merge(merged, bb,      ["bb_score", "bb_peak", "bb_chart_weeks", "year"])
+    merged = _left_merge(merged, kworb,   ["spotify_streams"])
+    merged = _left_merge(merged, youtube, ["youtube_views"])
+    merged = _left_merge(merged, itunes,  ["itunes_total"])
+    merged = _left_merge(merged, apple,   ["apple_total"])
 
-    # Era-normalise Spotify streams: percentile rank within release decade.
-    # Songs missing a decade (kworb-only, no Billboard year) fall into a
+    # Era-normalise all streaming/chart-point dimensions by release decade.
+    # Songs missing a decade (source-only, no Billboard year) fall into a
     # shared "unknown" bucket and are ranked among themselves.
-    if "spotify_streams" in merged.columns:
-        merged["decade"] = ((merged["year"].fillna(0) // 10) * 10).astype(int)
-        merged["sp_score"] = merged.groupby("decade")["spotify_streams"].rank(
-            ascending=True, pct=True, na_option="keep"
-        )
+    merged["decade"] = ((merged["year"].fillna(0) // 10) * 10).astype(int)
+    for raw_col, score_col in [
+        ("spotify_streams", "sp_score"),
+        ("youtube_views",   "yt_score"),
+        ("itunes_total",    "itunes_score"),
+        ("apple_total",     "apple_score"),
+    ]:
+        if raw_col in merged.columns:
+            merged[score_col] = merged.groupby("decade")[raw_col].rank(
+                ascending=True, pct=True, na_option="keep"
+            )
 
-    dim_cols = {"billboard": "bb_score", "spotify_streams": "sp_score"}
+    dim_cols = {
+        "billboard":      "bb_score",
+        "spotify_streams": "sp_score",
+        "youtube_views":   "yt_score",
+        "itunes_total":    "itunes_score",
+        "apple_total":     "apple_score",
+    }
     available_dims = {k: v for k, v in dim_cols.items() if v in merged.columns}
     merged["final_score"] = _apply_weights(merged, available_dims)
 

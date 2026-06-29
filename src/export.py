@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import TOP_N, BILLBOARD_ERA_HALF_WINDOW
+from src.utils import artist_html
 
 SCORES = os.path.join(os.path.dirname(__file__), "../data/scores.csv")
 LINKS = os.path.join(os.path.dirname(__file__), "../data/spotify_links.csv")
@@ -27,13 +28,19 @@ def export():
         ldf = pd.read_csv(LINKS).fillna("")
         links = {(r["title"], r["artist"]): r["spotify_url"] for _, r in ldf.iterrows()}
 
+    def fmt_int(val):
+        return f"{int(val):,}" if pd.notna(val) else "—"
+
     rows_html = ""
     for rank, row in df.iterrows():
-        year = f"{int(row['year'])}" if pd.notna(row.get("year")) else "—"
-        bb_peak = f"#{int(row['bb_peak'])}" if pd.notna(row.get("bb_peak")) else "—"
-        bb_chart_weeks = f"{int(row['bb_chart_weeks'])}w" if pd.notna(row.get("bb_chart_weeks")) else "—"
-        sp_streams = f"{int(row['spotify_streams']):,}" if pd.notna(row.get("spotify_streams")) else "—"
-        score = row.get("final_score", 0)
+        year        = f"{int(row['year'])}" if pd.notna(row.get("year")) else "—"
+        bb_peak     = f"#{int(row['bb_peak'])}" if pd.notna(row.get("bb_peak")) else "—"
+        bb_weeks    = f"{int(row['bb_chart_weeks'])}w" if pd.notna(row.get("bb_chart_weeks")) else "—"
+        sp_streams  = fmt_int(row.get("spotify_streams"))
+        yt_views    = fmt_int(row.get("youtube_views"))
+        itunes_pts  = fmt_int(row.get("itunes_total"))
+        apple_pts   = fmt_int(row.get("apple_total"))
+        score       = row.get("final_score", 0)
 
         sp_url = links.get((row["title"], row["artist"]), "")
         title_cell = (
@@ -45,12 +52,15 @@ def export():
         <tr>
           <td class="rank">{rank}</td>
           <td class="title">{title_cell}</td>
-          <td class="artist">{row['artist']}</td>
+          <td class="artist">{artist_html(row['artist'])}</td>
           <td class="year">{year}</td>
           <td class="score">{score:.1f}</td>
           <td>{bb_peak}</td>
-          <td>{bb_chart_weeks}</td>
-          <td>{sp_streams}</td>
+          <td>{bb_weeks}</td>
+          <td class="num">{sp_streams}</td>
+          <td class="num">{yt_views}</td>
+          <td class="num">{itunes_pts}</td>
+          <td class="num">{apple_pts}</td>
         </tr>"""
 
     updated = datetime.now(timezone.utc).strftime("%d %b %Y")
@@ -80,12 +90,14 @@ def export():
     td {{ padding: 0.5rem 0.8rem; border-bottom: 1px solid #1e1e1e; }}
     tr:hover td {{ background: #1a1a1a; }}
     .rank {{ color: #555; width: 3rem; }}
-    .title {{ font-weight: 600; color: #fff; max-width: 260px; }}
+    .title {{ font-weight: 600; color: #fff; max-width: 240px; }}
     .title a {{ color: #fff; text-decoration: none; }}
     .title a:hover {{ color: #1db954; text-decoration: underline; }}
-    .artist {{ color: #bbb; max-width: 200px; }}
+    .artist {{ color: #bbb; max-width: 180px; }}
+    .feat {{ color: #666; }}
     .year {{ color: #666; width: 4rem; }}
     .score {{ font-weight: 700; color: #1db954; }}
+    .num {{ color: #999; text-align: right; font-variant-numeric: tabular-nums; }}
     .sort-btn.sorted-asc::after {{ content: " ▲"; }}
     .sort-btn.sorted-desc::after {{ content: " ▼"; }}
     .group-header {{ font-size: 0.75rem; color: #555; text-transform: uppercase;
@@ -107,7 +119,10 @@ def export():
         <th><button type="button" class="sort-btn">Score</button></th>
         <th><button type="button" class="sort-btn">BB Peak</button></th>
         <th><button type="button" class="sort-btn">BB Weeks</button></th>
-        <th><button type="button" class="sort-btn">Spotify Streams</button></th>
+        <th><button type="button" class="sort-btn">Spotify</button></th>
+        <th><button type="button" class="sort-btn">YouTube</button></th>
+        <th><button type="button" class="sort-btn">iTunes</button></th>
+        <th><button type="button" class="sort-btn">Apple Music</button></th>
       </tr>
     </thead>
     <tbody>{rows_html}

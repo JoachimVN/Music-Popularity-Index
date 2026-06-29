@@ -11,8 +11,11 @@ SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 # Billboard via a centred rolling-window percentile (see BILLBOARD_ERA_HALF_WINDOW),
 # Spotify streams via within-decade percentile ranking.
 WEIGHTS = {
-    "billboard": 0.60,
-    "spotify_streams": 0.40,
+    "billboard":       0.40,
+    "spotify_streams": 0.25,
+    "youtube_views":   0.15,
+    "itunes_total":    0.10,
+    "apple_total":     0.10,
 }
 
 # Billboard era-normalisation: each song's peak and longevity are ranked against
@@ -26,4 +29,4 @@ BILLBOARD_ERA_HALF_WINDOW = 5
 BILLBOARD_PEAK_WEIGHT = 0.60
 
 # How many top songs to show in the output table
-TOP_N = 500
+TOP_N = 1000
