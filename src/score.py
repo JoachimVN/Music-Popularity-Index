@@ -29,13 +29,16 @@ def normalize_title(t):
 def normalize_artist(a):
     a = str(a).lower().strip()
     a = re.sub(r"\(.*", "", a)  # drop "(with ...)" / "(Remix)" style suffixes
-    # Strip featured-artist suffixes. Billboard spells these out ("The Weeknd
-    # Featuring Daft Punk") while kworb lists only the lead ("The Weeknd"), so we
-    # must catch the spelled-out "featuring"/"with" forms too, not just "feat."/
-    # "ft." — otherwise e.g. Starboy, One Dance, Uptown Funk never join their
-    # Spotify stream rows and rank far below where they belong.
+    # Strip collaboration suffixes. kworb always lists the primary artist only,
+    # while Billboard spells out all collaborators in several formats:
+    #   "feat."/"ft."/"featuring" — e.g. "The Weeknd Featuring Daft Punk"
+    #   "with"                    — e.g. "Sam Smith with Calvin Harris"
+    #   ", X"                     — e.g. "Cardi B, Bad Bunny & J Balvin"
+    #   "& X" / "x X"            — e.g. "Lady Gaga & Bruno Mars", "Jawsh 685 x Jason Derulo"
     a = re.sub(r"\b(feat\.?|ft\.?|featuring)\b.*", "", a)
     a = re.sub(r"\bwith\b.*", "", a)
+    a = re.sub(r",.*", "", a)
+    a = re.sub(r"\s+[&x]\s+.*", "", a)
     a = re.sub(r"/.*", "", a)  # "A/B Band" → "A"; AC/DC → "ac" in both sources, still matches
     a = re.sub(r"[^\w\s]", "", a)
     return re.sub(r"\s+", " ", a).strip()
@@ -159,6 +162,7 @@ def load_kworb():
     df = pd.read_csv(path)
     df["key_title"] = df["title"].map(normalize_title)
     df["key_artist"] = df["artist"].map(normalize_artist)
+    df = df.sort_values("spotify_streams", ascending=False).drop_duplicates(subset=["key_title", "key_artist"])
     # sp_score assigned after merge with Billboard (needs year for era normalisation)
     return df[["key_title", "key_artist", "title", "artist", "spotify_streams"]]
 
@@ -189,6 +193,9 @@ def _load_chart_points(filename, col, label):
     df = pd.read_csv(path)
     df["key_title"] = df["title"].map(normalize_title)
     df["key_artist"] = df["artist"].map(normalize_artist)
+    # After normalization multiple rows can share the same key (e.g. original
+    # and remix both map to the primary artist). Keep the highest value.
+    df = df.sort_values(col, ascending=False).drop_duplicates(subset=["key_title", "key_artist"])
     return df[["key_title", "key_artist", "title", "artist", col]]
 
 

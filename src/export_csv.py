@@ -21,8 +21,13 @@ OUTPUT = os.path.join(BASE, "../output/music_index_full.csv")
 # Output column order. Drop "decade" here if you want a leaner file — it's just
 # (year // 10) * 10, derivable from "year" anytime.
 COLUMNS = [
-    "title", "artist", "year", "decade", "bb_peak", "bb_chart_weeks",
-    "spotify_streams", "bb_score", "sp_score", "final_score", "spotify_url",
+    "title", "artist", "year", "decade",
+    "bb_peak", "bb_chart_weeks", "bb_score",
+    "spotify_streams", "sp_score",
+    "youtube_views", "yt_score",
+    "itunes_total", "itunes_score",
+    "apple_total", "apple_score",
+    "final_score", "spotify_url",
 ]
 
 
@@ -47,7 +52,8 @@ def main():
         merged = scores.copy()
         merged["spotify_url"] = pd.NA
 
-    merged = merged[COLUMNS]
+    present = [c for c in COLUMNS if c in merged.columns]
+    merged = merged[present]
     merged = merged.copy()
     merged["artist"] = merged["artist"].map(artist_csv)
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
