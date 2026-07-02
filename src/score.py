@@ -33,6 +33,12 @@ def normalize_title(t):
     # e.g. "Take My Breath - Single Version" never matches Billboard's plain
     # "Take My Breath" and its floor/streams data goes unmatched.
     t = re.sub(r" - .*$", "", t)
+    # A bare hyphen with no surrounding spaces (e.g. RIAA's "TIK-TOK" vs
+    # Billboard/kworb's "TiK ToK") is a word separator, not punctuation to
+    # discard outright — stripping it below without first turning it into a
+    # space would silently join the two halves into one word ("tiktok")
+    # instead of matching the space-separated key ("tik tok").
+    t = t.replace("-", " ")
     t = re.sub(r"[^\w\s]", "", t)
     return re.sub(r"\s+", " ", t).strip()
 
@@ -64,12 +70,14 @@ def normalize_artist(a):
     #   "feat."/"ft."/"featuring" — e.g. "The Weeknd Featuring Daft Punk"
     #   "with"                    — e.g. "Sam Smith with Calvin Harris"
     #   ", X"                     — e.g. "Cardi B, Bad Bunny & J Balvin"
-    #   "& X" / "x X"            — e.g. "Lady Gaga & Bruno Mars", "Jawsh 685 x Jason Derulo"
+    #   "& X" / "x X" / "+ X"    — e.g. "Lady Gaga & Bruno Mars", "Jawsh 685 x Jason Derulo",
+    #                               "Jay-Z + Alicia Keys"
     #   "vs. X"                   — e.g. "Lana Del Rey vs. Cedric Gervais" (remix credits)
     a = re.sub(r"\b(feat\.?|ft\.?|featuring)\b.*", "", a)
     a = re.sub(r"\bwith\b.*", "", a)
     a = re.sub(r"\bvs\.?\b.*", "", a)
     a = re.sub(r",.*", "", a)
+    a = re.sub(r"\s*\+.*", "", a)
     # Require a non-whitespace char after & or x so "Lil Nas X" isn't eaten
     a = re.sub(r"[ \t][&x][ \t]\S.*", "", a)
     a = re.sub(r"/.*", "", a)  # "A/B Band" → "A"; AC/DC → "ac" in both sources, still matches

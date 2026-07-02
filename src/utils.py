@@ -26,6 +26,7 @@ def _protect_atomic_acts(s):
 _ALL_SPLIT_RE = re.compile(
     r'\s*,\s*'                              # comma
     r'|\s*&\s*'                             # ampersand
+    r'|\s*\+\s*'                            # plus, e.g. "Jay-Z + Alicia Keys"
     r'|\s*/\s*'                             # slash (atomic acts protected above)
     r'|\s*:\s*'                             # colon
     r'|\s+x\s+'                             # " x " (space-padded, so "Lil Nas X" is untouched)
@@ -54,7 +55,7 @@ def split_all_artists(artist):
     """
     Split a raw artist credit into every individual collaborator.
 
-    Handles "&", ",", " x ", " with ", " vs ", ":", "/" and feat/ft/featuring,
+    Handles "&", "+", ",", " x ", " with ", " vs ", ":", "/" and feat/ft/featuring,
     e.g. "Anuel AA, Daddy Yankee, Karol G, Ozuna & J Balvin" ->
     ["Anuel AA", "Daddy Yankee", "Karol G", "Ozuna", "J Balvin"].
     """
