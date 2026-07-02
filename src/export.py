@@ -28,15 +28,22 @@ def export():
         ldf = pd.read_csv(LINKS).fillna("")
         links = {(r["title"], r["artist"]): r["spotify_url"] for _, r in ldf.iterrows()}
 
-    def fmt_int(val):
-        return f"{int(val):,}" if pd.notna(val) else "—"
+    def fmt_int(val, is_floor=False):
+        if pd.isna(val):
+            return "—"
+        # Songs missing from kworb but known (via a curated "N+ Million
+        # Streams" playlist) to clear a threshold get that threshold as a
+        # floor, not an exact count — mark it with "+" so it doesn't read as
+        # a precise number.
+        suffix = "+" if is_floor else ""
+        return f"{int(val):,}{suffix}"
 
     rows_html = ""
     for rank, row in df.iterrows():
         year        = f"{int(row['year'])}" if pd.notna(row.get("year")) else "—"
         bb_peak     = f"#{int(row['bb_peak'])}" if pd.notna(row.get("bb_peak")) else "—"
         bb_weeks    = f"{int(row['bb_chart_weeks'])}w" if pd.notna(row.get("bb_chart_weeks")) else "—"
-        sp_streams  = fmt_int(row.get("spotify_streams"))
+        sp_streams  = fmt_int(row.get("spotify_streams"), is_floor=bool(row.get("spotify_streams_is_floor")))
         yt_views    = fmt_int(row.get("youtube_views"))
         itunes_pts  = fmt_int(row.get("itunes_total"))
         apple_pts   = fmt_int(row.get("apple_total"))

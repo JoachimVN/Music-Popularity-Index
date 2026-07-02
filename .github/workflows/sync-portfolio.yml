@@ -1,8 +1,12 @@
-name: Sync to Portfolio
+name: Sync to dependent repos
 
-# Publishes the built pages to the portfolio repo (Vercel-deployed at joavn.dev),
-# serving the index at joavn.dev/mpi. Mirrors the same pattern CHORIDOR-web uses.
-# Requires a repo secret PORTFOLIO_TOKEN: a PAT with write access to JoachimVN/Portfolio.
+# Publishes build artifacts to repos that depend on them:
+#  - Portfolio (Vercel-deployed at joavn.dev): the built HTML pages, served at joavn.dev/mpi.
+#  - Versed: the full scored CSV, which its server reads as a data file.
+# Mirrors the same pattern CHORIDOR-web uses.
+# Requires repo secrets:
+#  - PORTFOLIO_TOKEN: a PAT with write access to JoachimVN/Portfolio.
+#  - VERSED_TOKEN: a PAT with write access to JoachimVN/Versed.
 
 on:
   push:
@@ -10,12 +14,12 @@ on:
     paths:
       - 'output/index.html'
       - 'output/billboard.html'
+      - 'output/music_index_full.csv'
   workflow_dispatch:
 
 jobs:
-  sync:
+  sync-portfolio:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -38,4 +42,28 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add mpi/
           git diff --staged --quiet || git commit -m "chore: sync MPI from Music-Popularity-Index@${{ github.sha }}"
+          git push
+
+  sync-versed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone Versed repo
+        env:
+          VERSED_TOKEN: ${{ secrets.VERSED_TOKEN }}
+        run: git clone "https://x-access-token:${VERSED_TOKEN}@github.com/JoachimVN/Versed.git" versed
+
+      - name: Sync scored CSV -> server/src/data/
+        run: |
+          mkdir -p versed/server/src/data
+          cp output/music_index_full.csv versed/server/src/data/music_index_full.csv
+
+      - name: Commit and push
+        run: |
+          cd versed
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add server/src/data/music_index_full.csv
+          git diff --staged --quiet || git commit -m "chore: sync music_index_full.csv from Music-Popularity-Index@${{ github.sha }}"
           git push
