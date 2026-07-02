@@ -31,6 +31,8 @@ COLUMNS = [
     "itunes_total", "itunes_score",
     "apple_total", "apple_score",
     "sales_peak", "sales_chart_weeks", "sales_score",
+    "riaa_units", "riaa_score",
+    "radio_peak", "radio_chart_weeks", "radio_score",
     "final_score", "spotify_url",
 ]
 

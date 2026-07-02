@@ -59,6 +59,24 @@ PLATFORMS = [
         "color":     "#ffd60a",
         "output":    os.path.join(BASE, "../output/sales.html"),
     },
+    {
+        "name":      "RIAA Certifications",
+        "raw_col":   "riaa_units",
+        "score_col": "riaa_score",
+        "label":     "Certified Units",
+        "coverage":  "RIAA Gold/Platinum/Diamond single certifications, since 1958",
+        "color":     "#b08d57",
+        "output":    os.path.join(BASE, "../output/riaa.html"),
+    },
+    {
+        "name":      "Radio Airplay",
+        "raw_col":   "radio_chart_weeks",
+        "score_col": "radio_score",
+        "label":     "Weeks Charted",
+        "coverage":  "Billboard Radio Songs chart, since Oct 1990",
+        "color":     "#4ea8de",
+        "output":    os.path.join(BASE, "../output/radio_airplay.html"),
+    },
 ]
 
 TOP_N = 500

@@ -39,6 +39,7 @@ python src/fetch_kworb.py         # scrapes kworb.net all-time Spotify streams
 python src/fetch_youtube.py       # scrapes kworb.net all-time YouTube view counts
 python src/fetch_itunes.py        # scrapes kworb.net worldwide iTunes chart point totals
 python src/fetch_apple_music.py   # scrapes kworb.net Apple Music chart point totals
+python src/fetch_riaa.py          # scrapes RIAA Gold/Platinum/Diamond single certifications (resumable, can take hours)
 ```
 
 Individual downstream steps (what the runner calls, in order):
@@ -63,14 +64,35 @@ fetch_youtube.py      →  data/youtube_raw.csv        ↗                      
 fetch_itunes.py       →  data/itunes_raw.csv         ↗                              └─ export_csv.py → output/music_index_full.csv
 fetch_apple_music.py  →  data/apple_music_raw.csv   ↗
        (no fetcher)   →  data/digital.csv           ↗
+       (no fetcher)   →  data/radio.csv             ↗
+fetch_riaa.py          →  data/riaa_raw.csv          ↗
                                                              load_billboard() → export_billboard.py → output/billboard.html
 ```
 
-`data/digital.csv` (Billboard's Digital Song Sales chart, same shape as `hot100.csv`)
-has no fetcher script yet — it was scraped by hand/other tooling and just needs to
-stay in `data/` for `score.py`'s `load_digital_sales()` to pick it up. The chart only
-goes back to 2004-10-20 (no digital sales before iTunes), so pre-2004 songs are
-excluded from that dimension's weight rather than penalized (see `_PLATFORM_START`).
+`data/digital.csv` and `data/radio.csv` (Billboard's Digital Song Sales and Radio
+Songs charts, same shape as `hot100.csv`) have no fetcher scripts yet — they were
+scraped by hand/other tooling and just need to stay in `data/` for `score.py`'s
+`load_digital_sales()`/`load_radio()` to pick them up. All three (`load_billboard`,
+`load_digital_sales`, `load_radio`) share one implementation, `_load_billboard_style_chart()`,
+since they're identically-shaped exports of different Billboard component charts.
+Digital Song Sales only goes back to 2004-10-20 (no digital sales before iTunes) and
+Radio Songs to 1990-10-24, so songs released before those dates are excluded from
+that dimension's weight rather than penalized (see `_PLATFORM_START`).
+
+**`fetch_riaa.py`** scrapes RIAA's Gold & Platinum certification database (Single
+format only) for `load_riaa()`. Unlike Billboard's Digital Song Sales chart, RIAA
+certifications go back to 1958, so this dimension is treated as all-era (like
+Spotify/YouTube), not excluded via `_PLATFORM_START` — the point is to give
+pre-streaming songs a second all-era signal besides Billboard. The site's
+pagination ("Load More") is behind Cloudflare and blocks plain HTTP POST
+requests, but the first page of any date-filtered query renders server-side on
+a plain GET, so the fetcher partitions 1958–present into year chunks and
+recursively bisects (by date, then by award tier, then by certification type)
+any chunk that hits the ~25-row page cap. It's resumable per-year (progress
+tracked in `data/riaa_progress.txt`, separate from the CSV, so sparse years
+with zero real certifications don't get endlessly re-fetched) and can take
+hours for a full historical run given the request volume in recent
+high-certification years.
 
 `export_csv.py` joins `data/scores.csv` with the cached `data/spotify_links.csv` into
 `output/music_index_full.csv` (full ranking, all columns + `spotify_url`). `run_pipeline.py`
@@ -84,6 +106,8 @@ chains score → fetch_spotify_links → export_csv → export → export_billbo
 - iTunes score: percentile rank of `itunes_total` (cumulative chart points since Aug 2010) within the song's release decade
 - Apple Music score: percentile rank of `apple_total` (cumulative chart points since Jul 2017) within the song's release decade
 - Digital sales score: `0.6 × peak_pct + 0.4 × weeks_pct` on the Digital Song Sales chart (same rolling-window formula as Billboard, since Oct 2004)
+- Radio airplay score: `0.6 × peak_pct + 0.4 × weeks_pct` on the Radio Songs chart (same rolling-window formula as Billboard, since Oct 1990)
+- RIAA certification score: percentile rank of certified units (Gold=500k, Platinum=1M×tier, Diamond=10M×tier) within the song's release decade, all-era
 - Composite: weighted sum of all available dimension scores, then normalized to 0–100
 - Weights and `TOP_N` are configured in `config.py`
 
