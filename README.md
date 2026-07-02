@@ -1,8 +1,10 @@
 # Music Popularity Index
 
 A data pipeline that ranks songs by an era-normalized popularity score, combining
-**Billboard Hot 100** chart history with **Spotify all-time stream counts**. Built
-as the source of truth for a Name-That-Tune-style music quiz game.
+**Billboard chart history** (Hot 100, Digital Song Sales, Radio Songs), **Spotify**
+and **YouTube** all-time counts, **iTunes**/**Apple Music** chart points, and **RIAA**
+Gold/Platinum/Diamond single certifications into one composite score. Built as the
+source of truth for a Name-That-Tune-style music quiz game.
 
 **Live:** [joavn.dev/mpi](https://joavn.dev/mpi)
 
@@ -11,17 +13,36 @@ as the source of truth for a Name-That-Tune-style music quiz game.
 
 ## What it does
 
-- Scrapes the Billboard Hot 100 (1958–present) and kworb.net all-time Spotify streams.
-- Era-normalizes both dimensions so songs from different decades are comparable.
-- Produces a ranked list (`output/music_index_full.csv`) and two browsable pages
+- Scrapes the Billboard Hot 100 (1958–present), kworb.net all-time Spotify/YouTube
+  counts, kworb.net iTunes/Apple Music chart points, and RIAA single certifications.
+  Billboard's Digital Song Sales and Radio Songs charts are also sourced but don't
+  have fetcher scripts yet (see `CLAUDE.md`).
+- Era-normalizes every dimension so songs from different decades are comparable —
+  most via percentile rank within the song's release decade, Billboard/sales/radio
+  via a centred rolling-window percentile.
+- Produces a ranked list (`output/music_index_full.csv`) and browsable pages
   (`output/index.html`, `output/billboard.html`).
 
 ### Scoring (summary)
 
-- **Billboard** (60%): peak position and chart longevity, each percentile-ranked
-  against songs released within a ±5-year window (`60%` peak / `40%` weeks).
-- **Spotify** (40%): stream count, percentile-ranked within the song's release decade.
-- Composite is normalized to 0–100. Weights live in `config.py`.
+Eight weighted dimensions, each era-normalized (see `config.py` for exact weights,
+which currently sum to: Billboard 30%, Spotify 17%, YouTube 11%, RIAA certifications
+15%, Digital Sales 8%, iTunes 7%, Apple Music 7%, Radio Airplay 5%):
+
+- **Billboard**, **Digital Sales**, **Radio Airplay**: `0.6 × peak_pct + 0.4 × weeks_pct`
+  on the respective chart, ranked against songs released within a ±5-year window.
+- **Spotify**, **YouTube**, **iTunes**, **Apple Music**: percentile rank of the raw
+  count within the song's release decade.
+- **RIAA certifications**: percentile rank of certified units (Gold/Platinum/Diamond,
+  with `Nx` multipliers) within the song's release decade — the one dimension that
+  isn't era-gated, since RIAA has certified singles since 1958 and this is meant to
+  give pre-streaming songs a second all-era signal besides Billboard.
+- Composite is normalized to 0–100. Digital Sales, iTunes, Apple Music, and Radio
+  Airplay are era-gated (`config.py`'s `_PLATFORM_START` in `score.py`) so songs
+  released before each platform existed aren't penalized for an absence beyond
+  their control.
+- `output/index.html` has an in-browser weight adjuster — type a weight (%) per
+  dimension and the table re-ranks live in your browser, no server round-trip.
 
 See `CLAUDE.md` for the full architecture and data-flow notes.
 
@@ -45,8 +66,12 @@ SPOTIFY_CLIENT_SECRET=...
 Scrape source data first (slow, resumable — only needed when refreshing data):
 
 ```bash
-python src/fetch_billboard.py   # Billboard Hot 100
-python src/fetch_kworb.py       # Spotify all-time streams
+python src/fetch_billboard.py     # Billboard Hot 100 (~875 requests)
+python src/fetch_kworb.py         # Spotify all-time streams
+python src/fetch_youtube.py       # kworb.net all-time YouTube views
+python src/fetch_itunes.py        # kworb.net worldwide iTunes chart points
+python src/fetch_apple_music.py   # kworb.net Apple Music chart points
+python src/fetch_riaa.py          # RIAA Gold/Platinum/Diamond single certifications (can take hours)
 ```
 
 Then build everything with the one-command runner:
