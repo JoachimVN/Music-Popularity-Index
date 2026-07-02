@@ -47,48 +47,65 @@ def _title_block_key(key_title):
     return tuple(sorted(w[:3] for w in words[:3]))
 
 
-def find_candidates(df):
+def _build_blocks(df):
+    """Bucket row indices by _title_block_key so we only compare plausibly-
+    related songs instead of every pair across ~47k rows."""
     buckets = {}
     for idx, row in df.iterrows():
         key = _title_block_key(str(row["key_title"]))
-        if not key:
-            continue
-        buckets.setdefault(key, []).append(idx)
+        if key:
+            buckets.setdefault(key, []).append(idx)
+    return buckets
 
+
+def _bucket_pairs(idxs):
+    """Every unordered pair of row indices within one blocking bucket."""
+    for i in range(len(idxs)):
+        for j in range(i + 1, len(idxs)):
+            yield idxs[i], idxs[j]
+
+
+def _evaluate_pair(a, b):
+    """A candidate-row dict if (a, b) look like a missed cross-source merge
+    (similar title, overlapping artist, complementary — not identical —
+    dimension data), else None."""
+    if a["key_title"] == b["key_title"] and a["key_artist"] == b["key_artist"]:
+        return None
+
+    title_sim = SequenceMatcher(None, str(a["key_title"]), str(b["key_title"])).ratio()
+    if title_sim < TITLE_SIM_THRESHOLD:
+        return None
+
+    if not (_artist_tokens(a["artist"]) & _artist_tokens(b["artist"])):
+        return None
+
+    a_dims = {c for c in DIM_PRESENCE_COLS if pd.notna(a.get(c))}
+    b_dims = {c for c in DIM_PRESENCE_COLS if pd.notna(b.get(c))}
+    if not a_dims or not b_dims or a_dims == b_dims:
+        return None
+
+    return {
+        "title_sim": round(title_sim, 3),
+        "rank_a": a.name, "title_a": a["title"], "artist_a": a["artist"], "dims_a": ",".join(sorted(a_dims)),
+        "rank_b": b.name, "title_b": b["title"], "artist_b": b["artist"], "dims_b": ",".join(sorted(b_dims)),
+    }
+
+
+def find_candidates(df):
     candidates = []
     seen_pairs = set()
-    for idxs in buckets.values():
+    for idxs in _build_blocks(df).values():
         if len(idxs) < 2:
             continue
-        for i in range(len(idxs)):
-            for j in range(i + 1, len(idxs)):
-                ia, ib = idxs[i], idxs[j]
-                pair_key = (ia, ib) if ia < ib else (ib, ia)
-                if pair_key in seen_pairs:
-                    continue
-                seen_pairs.add(pair_key)
+        for ia, ib in _bucket_pairs(idxs):
+            pair_key = (ia, ib) if ia < ib else (ib, ia)
+            if pair_key in seen_pairs:
+                continue
+            seen_pairs.add(pair_key)
 
-                a, b = df.loc[ia], df.loc[ib]
-                if a["key_title"] == b["key_title"] and a["key_artist"] == b["key_artist"]:
-                    continue
-
-                title_sim = SequenceMatcher(None, str(a["key_title"]), str(b["key_title"])).ratio()
-                if title_sim < TITLE_SIM_THRESHOLD:
-                    continue
-
-                if not (_artist_tokens(a["artist"]) & _artist_tokens(b["artist"])):
-                    continue
-
-                a_dims = {c for c in DIM_PRESENCE_COLS if pd.notna(a.get(c))}
-                b_dims = {c for c in DIM_PRESENCE_COLS if pd.notna(b.get(c))}
-                if not a_dims or not b_dims or a_dims == b_dims:
-                    continue
-
-                candidates.append({
-                    "title_sim": round(title_sim, 3),
-                    "rank_a": ia, "title_a": a["title"], "artist_a": a["artist"], "dims_a": ",".join(sorted(a_dims)),
-                    "rank_b": ib, "title_b": b["title"], "artist_b": b["artist"], "dims_b": ",".join(sorted(b_dims)),
-                })
+            candidate = _evaluate_pair(df.loc[ia], df.loc[ib])
+            if candidate:
+                candidates.append(candidate)
 
     return pd.DataFrame(candidates).sort_values("title_sim", ascending=False).reset_index(drop=True)
 

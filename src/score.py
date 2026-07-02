@@ -102,7 +102,10 @@ def normalize_artist(a):
     a = re.sub(r"\bwith\b.*", "", a)
     a = re.sub(r"\bvs\.?\b.*", "", a)
     a = re.sub(r",.*", "", a)
-    a = re.sub(r"\s*\+.*", "", a)
+    # No leading \s* here — the trailing whitespace-collapse below already
+    # cleans up any space left before the cut point, so there's no need for
+    # an unbounded quantifier here that a non-matching string could exploit.
+    a = re.sub(r"\+.*", "", a)
     # Require a non-whitespace char after & or x so "Lil Nas X" isn't eaten
     a = re.sub(r"[ \t][&x][ \t]\S.*", "", a)
     a = re.sub(r"/.*", "", a)  # "A/B Band" → "A"; AC/DC → "ac" in both sources, still matches

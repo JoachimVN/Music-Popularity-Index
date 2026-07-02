@@ -30,12 +30,14 @@ on:
       - 'output/music_index_full.csv'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Only this job pushes back to this repo (the commit-and-push step
+    # below) — sync-portfolio/sync-versed only read this repo and push to
+    # others via their own PAT secrets, so they don't need this permission.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
