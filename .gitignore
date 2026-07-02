@@ -7,8 +7,10 @@ __pycache__/
 data/
 venv/
 .venv/
-# Build dir is ignored except the published pages, which are deployed to joavn.dev/mpi
+# Build dir is ignored except the published pages, which are deployed to joavn.dev/mpi,
+# and the scored CSV, which is synced to Versed's server data dir
 output/*
 !output/index.html
 !output/billboard.html
+!output/music_index_full.csv
 /.vscode
