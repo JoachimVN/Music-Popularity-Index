@@ -28,6 +28,8 @@ from datetime import date, timedelta
 
 OUTPUT = os.path.join(os.path.dirname(__file__), "../data/riaa_raw.csv")
 PROGRESS = os.path.join(os.path.dirname(__file__), "../data/riaa_progress.txt")
+LATIN_OUTPUT = os.path.join(os.path.dirname(__file__), "../data/riaa_latin_raw.csv")
+LATIN_PROGRESS = os.path.join(os.path.dirname(__file__), "../data/riaa_latin_progress.txt")
 BASE_URL = "https://www.riaa.com/gold-platinum/"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -135,24 +137,32 @@ def _fetch_day_by_type(d, award):
     return all_rows
 
 
-def _fetch_day_by_tier(d):
+def _fetch_day_by_tier(d, type_filter=""):
     """A single calendar day can't be bisected by date any further — split
     by award tier (Gold/Platinum/Diamond) instead, since large batches of
-    certifications are often posted on the same day."""
+    certifications are often posted on the same day. When already scoped to
+    one certification type (type_filter set), that's the last axis the
+    search form exposes, so accept-with-a-warning instead of fanning out
+    further — only matters for the single busiest days/tiers/types."""
     all_rows = []
     for award in _AWARD_TIERS:
-        html = _fetch_window(d, d, award=award)
+        html = _fetch_window(d, d, award=award, type_=type_filter)
         time.sleep(SLEEP_BETWEEN)
         rows = _parse_rows(html)
         if len(rows) >= PAGE_CAP:
-            rows = _fetch_day_by_type(d, award)
+            if type_filter:
+                print(f"    WARNING: {d} award={award} type={type_filter} still >= {PAGE_CAP} rows — accepting possible truncation")
+            else:
+                rows = _fetch_day_by_type(d, award)
         all_rows.extend(rows)
     return all_rows
 
 
-def _fetch_range(d_from, d_to):
-    """Recursively bisect [d_from, d_to] until each window is under the page cap."""
-    html = _fetch_window(d_from, d_to)
+def _fetch_range(d_from, d_to, type_filter=""):
+    """Recursively bisect [d_from, d_to] until each window is under the page
+    cap. type_filter scopes the whole scrape to one certification type (e.g.
+    "LA" for Latin-track certifications) rather than the default "all types"."""
+    html = _fetch_window(d_from, d_to, type_=type_filter)
     time.sleep(SLEEP_BETWEEN)
     rows = _parse_rows(html)
 
@@ -160,38 +170,38 @@ def _fetch_range(d_from, d_to):
         return rows
 
     if d_from == d_to:
-        return _fetch_day_by_tier(d_from)
+        return _fetch_day_by_tier(d_from, type_filter)
 
     mid = d_from + (d_to - d_from) // 2
-    left = _fetch_range(d_from, mid)
-    right = _fetch_range(mid + timedelta(days=1), d_to)
+    left = _fetch_range(d_from, mid, type_filter)
+    right = _fetch_range(mid + timedelta(days=1), d_to, type_filter)
     return left + right
 
 
-def load_existing():
-    if os.path.exists(OUTPUT):
-        return pd.read_csv(OUTPUT)
+def load_existing(output_path=OUTPUT):
+    if os.path.exists(output_path):
+        return pd.read_csv(output_path)
     return pd.DataFrame()
 
 
-def _load_progress():
-    if os.path.exists(PROGRESS):
-        with open(PROGRESS) as f:
+def _load_progress(progress_path):
+    if os.path.exists(progress_path):
+        with open(progress_path) as f:
             return {int(line.strip()) for line in f if line.strip()}
     return set()
 
 
-def _mark_done(year):
-    with open(PROGRESS, "a") as f:
+def _mark_done(progress_path, year):
+    with open(progress_path, "a") as f:
         f.write(f"{year}\n")
 
 
-def scrape():
-    existing = load_existing()
+def _scrape(output_path, progress_path, type_filter=""):
+    existing = load_existing(output_path)
     # Track completed years explicitly rather than inferring from the data —
     # a year with zero real certifications (e.g. the sparse early catalog)
     # would otherwise never be marked done and get re-fetched every re-run.
-    done_years = _load_progress()
+    done_years = _load_progress(progress_path)
 
     years = list(range(START_YEAR, date.today().year + 1))
     for i, year in enumerate(years):
@@ -202,18 +212,39 @@ def scrape():
         d_from = date(year, 1, 1)
         d_to = min(date(year, 12, 31), date.today())
         print(f"[{i+1}/{len(years)}] {year} — fetching...")
-        rows = _fetch_range(d_from, d_to)
+        rows = _fetch_range(d_from, d_to, type_filter)
         for r in rows:
             r["cert_year"] = year
         print(f"    {len(rows)} single certifications")
 
         existing = pd.concat([existing, pd.DataFrame(rows)], ignore_index=True)
-        existing.to_csv(OUTPUT, index=False)
-        _mark_done(year)
+        existing.to_csv(output_path, index=False)
+        _mark_done(progress_path, year)
 
-    print(f"\nDone. Saved {len(existing)} rows to {OUTPUT}")
+    print(f"\nDone. Saved {len(existing)} rows to {output_path}")
     return existing
 
 
+def scrape():
+    return _scrape(OUTPUT, PROGRESS)
+
+
+def scrape_latin():
+    """
+    RIAA's Latin certification track uses much lower unit thresholds than
+    the standard track (Platino=60,000 vs Platinum=1,000,000 — see
+    https://www.riaa.com/gold-platinum/certification-criteria/), but the
+    site labels both "Platinum" on the page; the only way to tell them apart
+    is the type=LA search filter. Scrape that filter separately so score.py
+    can apply the correct (lower) unit base to Latin-track certifications
+    instead of overcounting them ~17x under the standard thresholds.
+    """
+    return _scrape(LATIN_OUTPUT, LATIN_PROGRESS, type_filter="LA")
+
+
 if __name__ == "__main__":
-    scrape()
+    import sys
+    if "--latin" in sys.argv:
+        scrape_latin()
+    else:
+        scrape()

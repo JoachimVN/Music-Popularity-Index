@@ -282,14 +282,48 @@ def load_apple_music():
 # non-matching string can't force super-linear backtracking via .search().
 _RIAA_TIER_RE = re.compile(r"(?:(\d{1,3})x\s*)?(gold|platinum|diamond)", re.I)
 _RIAA_BASE_UNITS = {"gold": 500_000, "platinum": 1_000_000, "diamond": 10_000_000}
+# RIAA's Latin track uses much lower unit thresholds than the standard track
+# (Platino=60,000 vs Platinum=1,000,000 — see
+# https://www.riaa.com/gold-platinum/certification-criteria/), but the site
+# labels both tracks "Gold"/"Platinum" identically, so a scraped tier string
+# alone can't tell them apart (see fetch_riaa.py's scrape_latin()). No
+# confirmed Latin-specific Diamond threshold exists, so Diamond falls back
+# to the standard base regardless of track.
+_RIAA_LATIN_BASE_UNITS = {"gold": 30_000, "platinum": 60_000, "diamond": 10_000_000}
 
 
-def _riaa_tier_to_units(tier):
+def _riaa_tier_to_units(tier, is_latin=False):
     m = _RIAA_TIER_RE.search(str(tier))
     if not m:
         return None
     mult = int(m.group(1)) if m.group(1) else 1
-    return mult * _RIAA_BASE_UNITS[m.group(2).lower()]
+    base_units = _RIAA_LATIN_BASE_UNITS if is_latin else _RIAA_BASE_UNITS
+    return mult * base_units[m.group(2).lower()]
+
+
+def _load_latin_cert_keys():
+    """
+    (key_title, key_artist, cert_date, award_tier) for every certification
+    scraped under RIAA's type=LA filter (fetch_riaa.py's scrape_latin()).
+    riaa_raw.csv is scraped with no type filter, so it already includes
+    every Latin certification too — this set is only used to flag which of
+    those rows were actually certified under the Latin track's lower
+    thresholds, since the tier text itself doesn't say.
+    """
+    path = os.path.join(DATA, "riaa_latin_raw.csv")
+    if not os.path.exists(path):
+        return set()
+    try:
+        df = pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        # Written by an in-progress scrape that hasn't found a Latin
+        # certification yet (early decades predate the Latin track).
+        return set()
+    if df.empty:
+        return set()
+    keys = zip(df["title"].map(normalize_title), df["artist"].map(normalize_artist),
+               df["cert_date"], df["award_tier"])
+    return set(keys)
 
 
 def load_riaa():
@@ -299,10 +333,19 @@ def load_riaa():
         return pd.DataFrame()
 
     df = pd.read_csv(path)
-    df["riaa_units"] = df["award_tier"].map(_riaa_tier_to_units)
-    df = df.dropna(subset=["riaa_units"])
     df["key_title"] = df["title"].map(normalize_title)
     df["key_artist"] = df["artist"].map(normalize_artist)
+
+    latin_keys = _load_latin_cert_keys()
+    is_latin = [
+        (kt, ka, cd, tier) in latin_keys
+        for kt, ka, cd, tier in zip(df["key_title"], df["key_artist"], df["cert_date"], df["award_tier"])
+    ]
+    df["riaa_units"] = [
+        _riaa_tier_to_units(tier, is_latin=latin)
+        for tier, latin in zip(df["award_tier"], is_latin)
+    ]
+    df = df.dropna(subset=["riaa_units"])
     # A song is re-certified every time it crosses a higher tier — keep only
     # the highest one reached (same "keep highest" pattern as _load_chart_points).
     df = df.sort_values("riaa_units", ascending=False).drop_duplicates(subset=["key_title", "key_artist"])
