@@ -1,27 +1,73 @@
 name: Sync to dependent repos
 
-# Publishes build artifacts to repos that depend on them:
-#  - Portfolio (Vercel-deployed at joavn.dev): the built HTML pages, served at joavn.dev/mpi.
+# Rebuilds output/index.html and output/music_index_full.csv from the
+# tracked data/scores.csv + data/spotify_links.csv (not the raw scraped
+# sources, which are gitignored and can take hours to re-scrape), then
+# publishes to repos that depend on it:
+#  - Portfolio (Vercel-deployed at joavn.dev): the built index page, served at joavn.dev/mpi.
 #  - Versed: the full scored CSV, which its server reads as a data file.
 # Mirrors the same pattern CHORIDOR-web uses.
 # Requires repo secrets:
 #  - PORTFOLIO_TOKEN: a PAT with write access to JoachimVN/Portfolio.
 #  - VERSED_TOKEN: a PAT with write access to JoachimVN/Versed.
+#
+# The build job commits any resulting output/ changes back to this repo's
+# main before the sync jobs run, so index.html/music_index_full.csv can
+# never silently drift from scores.csv — no dependence on remembering to
+# run the pipeline locally before merging.
 
 on:
   push:
     branches: [main]
     paths:
+      - 'data/scores.csv'
+      - 'data/spotify_links.csv'
+      - 'src/export_csv.py'
+      - 'src/export.py'
+      - 'src/utils.py'
+      - 'config.py'
       - 'output/index.html'
-      - 'output/billboard.html'
       - 'output/music_index_full.csv'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  sync-portfolio:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Rebuild index.html and music_index_full.csv from data/scores.csv
+        run: |
+          python src/export_csv.py
+          python src/export.py
+
+      - name: Commit and push if output/ changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/index.html output/music_index_full.csv
+          git diff --staged --quiet || git commit -m "chore: rebuild output/ from data/scores.csv [skip ci]"
+          git diff --staged --quiet || git push
+
+  sync-portfolio:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Clone portfolio repo
         env:
@@ -33,7 +79,6 @@ jobs:
           rm -rf portfolio/mpi
           mkdir -p portfolio/mpi
           cp output/index.html portfolio/mpi/index.html
-          cp output/billboard.html portfolio/mpi/billboard.html
 
       - name: Commit and push
         run: |
@@ -45,9 +90,12 @@ jobs:
           git push
 
   sync-versed:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Clone Versed repo
         env:
