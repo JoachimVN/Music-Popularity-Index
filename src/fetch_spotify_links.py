@@ -1,12 +1,16 @@
 """
-Resolves Spotify track URLs for scored songs from any Exportify-style
-CSV files in data/ (files containing Track URI + Track Name + Artist Name(s)).
+Resolves Spotify track URLs (plus duration and release year) for scored songs
+from any Exportify-style CSV files in data/ (files containing Track URI +
+Track Name + Artist Name(s)).
 
 Drop any Spotify playlist export into data/ and it is picked up automatically.
-Matching: title + primary artist, then title-only fallback.
+Matching: title + primary artist, then title-only fallback (only when the
+title is unambiguous, i.e. every row with that title shares the same primary
+artist — otherwise we'd risk matching e.g. "Golden" by Harry Styles to the
+HUNTR/X version).
 No API calls — instant and rate-limit-free.
 
-Output: data/spotify_links.csv  (title, artist, spotify_url)
+Output: data/spotify_links.csv  (title, artist, spotify_url, duration_ms, release_year)
 """
 
 import re
@@ -34,20 +38,48 @@ def _nd(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
+# Split off collaborators on the *raw* string before _nd() strips the ","/";"
+# separators Exportify uses for multi-artist credits (e.g. "Rihanna;Mikky Ekko"),
+# otherwise the separator disappears and _primary() returns mangled garbage.
+_PRIMARY_SPLIT_RE = re.compile(
+    r"\s*[;,:]\s*|\s+(?:featuring|feat\.?|ft\.?|with|x|and|&)\s+", re.IGNORECASE
+)
+
+
 def _primary(a):
-    a = _nd(a)
-    for sep in [" featuring ", " feat ", " ft ", " with ", " x ", " and "]:
-        if sep in a:
-            a = a.split(sep)[0]
-    return a.split(",")[0].strip()
+    first = _PRIMARY_SPLIT_RE.split(str(a), maxsplit=1)[0]
+    return _nd(first)
+
+
+# Column names vary slightly between Exportify export types
+# (single-playlist exports vs. the "Track Duration"/"Album Release Date"
+# style used by the top_10000_* full-library exports).
+_COLUMN_SYNONYMS = {
+    "uri":          ["Track URI"],
+    "title":        ["Track Name"],
+    "artist":       ["Artist Name(s)"],
+    "duration_ms":  ["Duration (ms)", "Track Duration (ms)"],
+    "release_date": ["Release Date", "Album Release Date"],
+}
 
 
 def _build_lookup():
     frames = []
     for path in sorted(glob.glob(os.path.join(DATA_DIR, "*.csv"))):
         try:
-            df = pd.read_csv(path, usecols=["Track URI", "Track Name", "Artist Name(s)"])
-            df = df.rename(columns={"Track URI": "uri", "Track Name": "title", "Artist Name(s)": "artist"})
+            header = pd.read_csv(path, nrows=0).columns
+            usecols, rename = [], {}
+            for canonical, synonyms in _COLUMN_SYNONYMS.items():
+                col = next((c for c in synonyms if c in header), None)
+                if col:
+                    usecols.append(col)
+                    rename[col] = canonical
+            if "uri" not in rename.values() or "title" not in rename.values() or "artist" not in rename.values():
+                continue
+            df = pd.read_csv(path, usecols=usecols).rename(columns=rename)
+            for missing in ("duration_ms", "release_date"):
+                if missing not in df.columns:
+                    df[missing] = pd.NA
             frames.append(df)
         except Exception:
             pass
@@ -59,12 +91,35 @@ def _build_lookup():
     combined["url"] = combined["uri"].str.replace(
         "spotify:track:", "https://open.spotify.com/track/", regex=False
     )
+    combined["duration_ms"] = pd.to_numeric(combined["duration_ms"], errors="coerce")
+    combined["release_year"] = pd.to_datetime(
+        combined["release_date"], errors="coerce"
+    ).dt.year
+    # Some Exportify exports only have a bare year ("1999") which to_datetime
+    # can fail to parse; fall back to pulling the first 4-digit run.
+    missing = combined["release_year"].isna()
+    combined.loc[missing, "release_year"] = pd.to_numeric(
+        combined.loc[missing, "release_date"].astype(str).str.extract(r"(\d{4})")[0],
+        errors="coerce",
+    )
+
     combined["kt"] = combined["title"].map(_nd)
     combined["kp"] = combined["artist"].map(_primary)
     print(f"  Loaded {len(combined):,} tracks from {len(frames)} CSV file(s)", flush=True)
 
-    by_both  = combined.drop_duplicates(subset=["kt", "kp"]).set_index(["kt", "kp"])["url"]
-    by_title = combined.drop_duplicates(subset=["kt"]).set_index("kt")["url"]
+    meta_cols = ["url", "duration_ms", "release_year"]
+    by_both = combined.drop_duplicates(subset=["kt", "kp"]).set_index(["kt", "kp"])[meta_cols]
+
+    # Title-only fallback: only keep titles where every row shares the same
+    # primary artist, so we never guess between two different songs that
+    # happen to share a title (e.g. "Golden" by Harry Styles vs. HUNTR/X).
+    unambiguous_titles = combined.groupby("kt")["kp"].nunique()
+    unambiguous_titles = unambiguous_titles[unambiguous_titles == 1].index
+    by_title = (
+        combined[combined["kt"].isin(unambiguous_titles)]
+        .drop_duplicates(subset=["kt"])
+        .set_index("kt")[meta_cols]
+    )
     return by_both, by_title
 
 
@@ -82,10 +137,22 @@ def fetch_all():
 
     rows = []
     for _, row in scores.iterrows():
-        kt  = _nd(row["title"])
-        kp  = _primary(row["artist"])
-        url = by_both.get((kt, kp)) or by_title.get(kt) or ""
-        rows.append({"title": row["title"], "artist": row["artist"], "spotify_url": url})
+        kt = _nd(row["title"])
+        kp = _primary(row["artist"])
+        if (kt, kp) in by_both.index:
+            match = by_both.loc[(kt, kp)]
+        elif kt in by_title.index:
+            match = by_title.loc[kt]
+        else:
+            match = None
+
+        rows.append({
+            "title": row["title"],
+            "artist": row["artist"],
+            "spotify_url": match["url"] if match is not None else "",
+            "duration_ms": match["duration_ms"] if match is not None else pd.NA,
+            "release_year": match["release_year"] if match is not None else pd.NA,
+        })
 
     df = pd.DataFrame(rows)
     df.to_csv(OUTPUT, index=False)

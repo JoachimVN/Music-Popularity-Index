@@ -20,8 +20,11 @@ OUTPUT = os.path.join(BASE, "../output/music_index_full.csv")
 
 # Output column order. Drop "decade" here if you want a leaner file — it's just
 # (year // 10) * 10, derivable from "year" anytime.
+# "year" is the song's first Billboard Hot 100 chart year (used for era
+# normalization); "release_year" is the true release year from Spotify
+# metadata where available — they can differ for late-charting singles.
 COLUMNS = [
-    "title", "artist", "year", "decade",
+    "title", "artist", "year", "release_year", "decade", "duration_ms",
     "bb_peak", "bb_chart_weeks", "bb_score",
     "spotify_streams", "sp_score",
     "youtube_views", "yt_score",
@@ -42,8 +45,9 @@ def main():
     if os.path.exists(LINKS):
         links = pd.read_csv(LINKS)
         links = links[links["spotify_url"].notna() & (links["spotify_url"] != "")]
+        link_cols = [c for c in ["spotify_url", "duration_ms", "release_year"] if c in links.columns]
         merged = scores.merge(
-            links[["title", "artist", "spotify_url"]],
+            links[["title", "artist"] + link_cols],
             on=["title", "artist"], how="left", validate="m:1",
         )
         merged.index = scores.index  # merge resets the index; restore the rank

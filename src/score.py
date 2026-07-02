@@ -27,12 +27,34 @@ def normalize_title(t):
     t = _strip_diacritics(str(t).lower().strip())
     t = re.sub(r"\([^\)]*\)", "", t)
     t = re.sub(r"\[[^\]]*\]", "", t)
+    # Exportify's " - Single Version"/" - Remastered 2011"/" - Radio Edit"
+    # style edition suffixes aren't part of the song identity — strip them
+    # the same way fetch_spotify_links.py's _nd() already does, otherwise
+    # e.g. "Take My Breath - Single Version" never matches Billboard's plain
+    # "Take My Breath" and its floor/streams data goes unmatched.
+    t = re.sub(r" - .*$", "", t)
     t = re.sub(r"[^\w\s]", "", t)
     return re.sub(r"\s+", " ", t).strip()
 
 
+# A few artist credits differ between sources in a way no generic rule
+# safely covers — not a separator pattern, not a "the"-prefix, just a
+# different spelling/abbreviation for the same act. A short explicit alias
+# list beats a fragile regex that risks merging unrelated artists.
+_ARTIST_ALIASES = {
+    "soulja boy tellem": "soulja boy",        # Billboard: "Soulja Boy Tell'em"; kworb/Spotify: "Soulja Boy"
+    "lillywood": "lilly wood and the prick",  # Billboard mis-scrapes "Lilly Wood and The Prick" as "Lillywood"
+    "lady a": "lady antebellum",              # band's post-2020 rebrand; Billboard still credits the old name for older chart entries
+}
+
+
 def normalize_artist(a):
     a = _strip_diacritics(str(a).lower().strip())
+    a = a.replace("$", "s")  # stylized stage names, e.g. "Ke$ha" -> kworb's "Kesha"
+    # A leading "The" is inconsistently included across sources for the same
+    # act (Billboard: "The Black Eyed Peas", kworb: "Black Eyed Peas") — drop
+    # it so they key-match instead of silently fragmenting into two rows.
+    a = re.sub(r"^the\s+", "", a)
     a = re.sub(r"\(.*", "", a)  # drop "(with ...)" / "(Remix)" style suffixes
     # Strip collaboration suffixes. kworb always lists the primary artist only,
     # while Billboard spells out all collaborators in several formats:
@@ -49,7 +71,8 @@ def normalize_artist(a):
     a = re.sub(r"[ \t][&x][ \t]\S.*", "", a)
     a = re.sub(r"/.*", "", a)  # "A/B Band" → "A"; AC/DC → "ac" in both sources, still matches
     a = re.sub(r"[^\w\s]", "", a)
-    return re.sub(r"\s+", " ", a).strip()
+    a = re.sub(r"\s+", " ", a).strip()
+    return _ARTIST_ALIASES.get(a, a)
 
 
 def rolling_percentile(years, values, half_window, higher_is_better):
@@ -170,9 +193,26 @@ def load_kworb():
     df = pd.read_csv(path)
     df["key_title"] = df["title"].map(normalize_title)
     df["key_artist"] = df["artist"].map(normalize_artist)
+
+    # kworb sometimes tracks a plain title and a "(Remix)"-tagged title as two
+    # separate rows for the same song (e.g. "Save Your Tears" vs "Save Your
+    # Tears (Remix)", both credited to "The Weeknd" — kworb never credits the
+    # remix's featured artist at all). normalize_title collapses both to one
+    # key, and we keep whichever has more streams. When the plain version
+    # wins, kworb's own artist credit for it is more trustworthy for display
+    # than another source's credit, which may carry a collaborator specific
+    # to the losing remix (Billboard credits "The Weeknd & Ariana Grande" for
+    # every historical week, including ones that predate the remix) — flag
+    # these rows so compute_scores() can prefer kworb's own title/artist.
+    df["_is_remix"] = df["title"].str.contains(r"\bremix\b", case=False, regex=True, na=False)
+    has_remix_sibling = df.groupby(["key_title", "key_artist"])["_is_remix"].transform("any")
+    has_plain_sibling = df.groupby(["key_title", "key_artist"])["_is_remix"].transform(lambda s: (~s).any())
+    df["authoritative"] = has_remix_sibling & has_plain_sibling & ~df["_is_remix"]
+    df = df.drop(columns="_is_remix")
+
     df = df.sort_values("spotify_streams", ascending=False).drop_duplicates(subset=["key_title", "key_artist"])
     # sp_score assigned after merge with Billboard (needs year for era normalisation)
-    return df[["key_title", "key_artist", "title", "artist", "spotify_streams"]]
+    return df[["key_title", "key_artist", "title", "artist", "spotify_streams", "authoritative"]]
 
 
 def load_youtube():
@@ -213,6 +253,129 @@ def load_itunes():
 
 def load_apple_music():
     return _load_chart_points("apple_music_raw.csv", "apple_total", "Apple Music")
+
+
+def _load_exportify_keys(filename):
+    """(key_title, key_artist) set for every track in an Exportify playlist export."""
+    path = os.path.join(DATA, filename)
+    if not os.path.exists(path):
+        return set()
+    df = pd.read_csv(path, usecols=["Track Name", "Artist Name(s)"])
+    title = df["Track Name"].map(normalize_title)
+    # Exportify's "Artist Name(s)" is semicolon-separated; the primary artist
+    # is enough to match against key_artist, which is itself already reduced
+    # to the primary artist by normalize_artist().
+    artist = df["Artist Name(s)"].str.split(";").str[0].map(normalize_artist)
+    return set(zip(title, artist))
+
+
+# kworb only scrapes the top ~2500 all-time Spotify streams (currently topping
+# out around 685M at the bottom of that list), so a song can be known — via a
+# curated "N+ Million Streams" playlist export — to clear a streaming
+# threshold while still being absent from kworb entirely. Without a floor such
+# songs are scored as if they had zero Spotify streams. Order matters: the
+# 500M floor is applied first so the 100M floor never overwrites it.
+_STREAM_FLOORS = [
+    ("500+_Million_Streams_[Top_50_ordered_by_Streams]_Most_played_tracks_on_Spotify.csv", 500_000_000),
+    ("100+_Million_Streams_[2009_and_Older].csv", 100_000_000),
+]
+
+
+def _apply_stream_floors(merged):
+    merged["spotify_streams_is_floor"] = False
+    missing = merged["spotify_streams"].isna()
+    keys = list(zip(merged["key_title"], merged["key_artist"]))
+
+    for filename, floor in _STREAM_FLOORS:
+        song_keys = _load_exportify_keys(filename)
+        if not song_keys:
+            continue
+        in_playlist = pd.Series([k in song_keys for k in keys], index=merged.index)
+        n = int((missing & in_playlist).sum())
+        if n:
+            merged.loc[missing & in_playlist, "spotify_streams"] = floor
+            merged.loc[missing & in_playlist, "spotify_streams_is_floor"] = True
+            print(f"  Backfilled {n} songs missing from kworb with a {floor:,}-stream floor from {filename}")
+        missing = merged["spotify_streams"].isna()  # recompute so the next floor can't overwrite this one
+    return merged
+
+
+def _artist_tokens(raw_artist):
+    """
+    Every individual artist name mentioned in a raw credit string, e.g.
+    "Rihanna Featuring Calvin Harris" -> {"rihanna", "calvin harris"}.
+    Reuses utils.split_all_artists (handles "&", ",", " x ", "/", feat/ft/
+    featuring/with/vs, quote-stripping) then normalizes each name so it's
+    comparable to key_artist.
+    """
+    from src.utils import split_all_artists
+    return {normalize_artist(p) for p in split_all_artists(raw_artist)} - {""}
+
+
+class _UnionFind:
+    def __init__(self):
+        self._parent = {}
+
+    def find(self, x):
+        self._parent.setdefault(x, x)
+        root = x
+        while self._parent[root] != root:
+            root = self._parent[root]
+        while self._parent[x] != root:
+            self._parent[x], x = root, self._parent[x]
+        return root
+
+    def union(self, a, b):
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self._parent[ra] = rb
+
+
+def _cluster_key_artists(frames):
+    """
+    Different sources often disagree on which collaborator is "primary" for
+    the same song — Billboard credits "We Found Love" to "Rihanna Featuring
+    Calvin Harris" (key_artist "rihanna"), kworb credits it to "Calvin Harris"
+    solo (key_artist "calvin harris"). Matching strictly on (title, primary
+    artist) then splits one song into unmatched fragments across sources.
+
+    Cluster (key_title, key_artist) pairs that share a title and at least one
+    artist name in common, via the *full* collaborator list rather than just
+    the primary name, and return a map from every pair to one canonical
+    representative pair. Clustering is scoped per key_title, so a "(Remix)"
+    tag that survived normalize_title (kept deliberately distinct — see
+    normalize_title) never merges with the original.
+    """
+    uf = _UnionFind()
+    token_owner = {}  # (key_title, artist_token) -> owning (key_title, key_artist) node
+    all_nodes = set()
+    for df in frames:
+        for kt, ka, raw_artist in zip(df["key_title"], df["key_artist"], df["artist"]):
+            node = (kt, ka)
+            all_nodes.add(node)
+            for tok in _artist_tokens(raw_artist):
+                owner_key = (kt, tok)
+                if owner_key in token_owner:
+                    uf.union(node, token_owner[owner_key])
+                else:
+                    token_owner[owner_key] = node
+
+    return {node: uf.find(node) for node in all_nodes}
+
+
+def _apply_artist_clusters(df, cluster_map, value_col=None):
+    """
+    Remap key_artist to its cluster's canonical value. Clustering can make
+    several rows within the same source share a (key_title, key_artist) pair
+    (e.g. iTunes tracking "Save Your Tears" separately for "The Weeknd" solo
+    and "The Weeknd & Ariana Grande") — collapse those to one row, keeping
+    the highest value_col (falls back to keeping the first row).
+    """
+    df = df.copy()
+    df["key_artist"] = [cluster_map[(kt, ka)][1] for kt, ka in zip(df["key_title"], df["key_artist"])]
+    if value_col and value_col in df.columns:
+        df = df.sort_values(value_col, ascending=False)
+    return df.drop_duplicates(subset=["key_title", "key_artist"])
 
 
 def _left_merge(merged, df, cols):
@@ -258,7 +421,33 @@ def compute_scores(songs_only=False):
     itunes = load_itunes()
     apple = load_apple_music()
 
+    # Cluster (title, artist) pairs that likely refer to the same song but
+    # were credited to a different "primary" artist per source — see
+    # _cluster_key_artists.
+    frames_and_cols = [(bb, "bb_score"), (kworb, "spotify_streams"), (youtube, "youtube_views"),
+                        (itunes, "itunes_total"), (apple, "apple_total")]
+    non_empty = [df for df, _ in frames_and_cols if not df.empty]
+    if non_empty:
+        cluster_map = _cluster_key_artists(non_empty)
+        if not bb.empty:
+            bb = _apply_artist_clusters(bb, cluster_map, value_col="bb_score")
+        if not kworb.empty:
+            kworb = _apply_artist_clusters(kworb, cluster_map, value_col="spotify_streams")
+        if not youtube.empty:
+            youtube = _apply_artist_clusters(youtube, cluster_map, value_col="youtube_views")
+        if not itunes.empty:
+            itunes = _apply_artist_clusters(itunes, cluster_map, value_col="itunes_total")
+        if not apple.empty:
+            apple = _apply_artist_clusters(apple, cluster_map, value_col="apple_total")
+
     dfs = []
+    # kworb rows flagged "authoritative" (see load_kworb) win the display
+    # title/artist over every other source — put them first so drop_duplicates
+    # below keeps them instead of e.g. Billboard's credit.
+    if not kworb.empty and "authoritative" in kworb.columns:
+        auth_kworb = kworb[kworb["authoritative"]]
+        if not auth_kworb.empty:
+            dfs.append(auth_kworb[["key_title", "key_artist", "title", "artist"]])
     if not bb.empty:
         dfs.append(bb[["key_title", "key_artist", "title", "artist"]])
     if not kworb.empty:
@@ -286,6 +475,7 @@ def compute_scores(songs_only=False):
     merged = songs
     merged = _left_merge(merged, bb,      ["bb_score", "bb_peak", "bb_chart_weeks", "year"])
     merged = _left_merge(merged, kworb,   ["spotify_streams"])
+    merged = _apply_stream_floors(merged)
     merged = _left_merge(merged, youtube, ["youtube_views"])
     merged = _left_merge(merged, itunes,  ["itunes_total"])
     merged = _left_merge(merged, apple,   ["apple_total"])
