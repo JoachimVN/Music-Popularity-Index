@@ -39,6 +39,15 @@ def normalize_title(t):
     # space would silently join the two halves into one word ("tiktok")
     # instead of matching the space-separated key ("tik tok").
     t = t.replace("-", " ")
+    # Double-A-side/medley titles joined by "/" can be listed in a different
+    # order across sources — e.g. Billboard's "Candle In The Wind 1997/
+    # Something About The Way You Look Tonight" vs RIAA's "Something About
+    # The Way You Look Tonight / Candle In The Wind 1997". Sort the parts so
+    # word order doesn't matter, same reasoning as the hyphen fix above: a
+    # bare "/" is a separator the join depends on, not noise to discard.
+    if "/" in t:
+        parts = sorted(p.strip() for p in t.split("/") if p.strip())
+        t = " ".join(parts)
     t = re.sub(r"[^\w\s]", "", t)
     return re.sub(r"\s+", " ", t).strip()
 
