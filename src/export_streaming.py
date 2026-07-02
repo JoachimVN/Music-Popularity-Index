@@ -50,6 +50,41 @@ PLATFORMS = [
         "color":     "#fc3c44",
         "output":    os.path.join(BASE, "../output/apple.html"),
     },
+    {
+        "name":      "Digital Sales",
+        "raw_col":   "sales_chart_weeks",
+        "score_col": "sales_score",
+        "label":     "Weeks Charted",
+        "coverage":  "Billboard Digital Song Sales chart, since Oct 2004",
+        "color":     "#ffd60a",
+        "output":    os.path.join(BASE, "../output/sales.html"),
+    },
+    {
+        "name":      "RIAA Certifications",
+        "raw_col":   "riaa_units",
+        "score_col": "riaa_score",
+        "label":     "Certified Units",
+        "coverage":  "RIAA Gold/Platinum/Diamond single certifications, since 1958",
+        "color":     "#b08d57",
+        "output":    os.path.join(BASE, "../output/riaa.html"),
+        # RIAA changed methodology in 2013 to count on-demand streams toward
+        # certification (150 streams = 1 unit), so raw units aren't
+        # comparable pre-/post-2013 the way a raw stream or view count is —
+        # a modern streaming-era mega-hit can rack up more "units" than an
+        # older song ever could under the old sales-only rules, even if the
+        # older song is more culturally significant. Sort by era-normalised
+        # score instead so decade cohorts stay comparable.
+        "sort_by":   "score",
+    },
+    {
+        "name":      "Radio Airplay",
+        "raw_col":   "radio_chart_weeks",
+        "score_col": "radio_score",
+        "label":     "Weeks Charted",
+        "coverage":  "Billboard Radio Songs chart, since Oct 1990",
+        "color":     "#4ea8de",
+        "output":    os.path.join(BASE, "../output/radio_airplay.html"),
+    },
 ]
 
 TOP_N = 500
@@ -59,13 +94,14 @@ def export_platform(df, p):
     raw_col   = p["raw_col"]
     score_col = p["score_col"]
     color     = p["color"]
+    sort_col  = score_col if p.get("sort_by") == "score" else raw_col
 
     if raw_col not in df.columns or score_col not in df.columns:
         print(f"  SKIP {p['name']} — columns missing from scores.csv")
         return
 
     sub = df[df[raw_col].notna()].copy()
-    sub = sub.sort_values(raw_col, ascending=False).head(TOP_N).reset_index(drop=True)
+    sub = sub.sort_values(sort_col, ascending=False).head(TOP_N).reset_index(drop=True)
     sub.index += 1
 
     rows_html = ""
@@ -118,7 +154,8 @@ def export_platform(df, p):
 </head>
 <body>
   <h1>{p['name']} — Era-Normalized</h1>
-  <p class="subtitle">Top {TOP_N} · {p['coverage']} · Era score = percentile within release decade · sorted by {p['label'].lower()}</p>
+  <p class="subtitle">Top {TOP_N} · {p['coverage']} · Era score = percentile within release decade ·
+    sorted by {'era score' if sort_col == score_col else p['label'].lower()}</p>
   <table id="table">
     <thead>
       <tr>
