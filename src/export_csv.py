@@ -30,6 +30,7 @@ COLUMNS = [
     "youtube_views", "yt_score",
     "itunes_total", "itunes_score",
     "apple_total", "apple_score",
+    "sales_peak", "sales_chart_weeks", "sales_score",
     "final_score", "spotify_url",
 ]
 

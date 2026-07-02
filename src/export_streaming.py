@@ -50,6 +50,15 @@ PLATFORMS = [
         "color":     "#fc3c44",
         "output":    os.path.join(BASE, "../output/apple.html"),
     },
+    {
+        "name":      "Digital Sales",
+        "raw_col":   "sales_chart_weeks",
+        "score_col": "sales_score",
+        "label":     "Weeks Charted",
+        "coverage":  "Billboard Digital Song Sales chart, since Oct 2004",
+        "color":     "#ffd60a",
+        "output":    os.path.join(BASE, "../output/sales.html"),
+    },
 ]
 
 TOP_N = 500

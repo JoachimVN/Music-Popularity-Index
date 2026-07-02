@@ -187,6 +187,54 @@ def load_billboard():
     return agg
 
 
+def load_digital_sales():
+    path = os.path.join(DATA, "digital.csv")
+    if not os.path.exists(path):
+        print("WARNING: digital.csv not found — digital sales dimension skipped")
+        return pd.DataFrame()
+
+    df = pd.read_csv(path, usecols=["Date", "Song", "Artist", "Peak Position", "Weeks in Charts"])
+    df = df.rename(columns={
+        "Date": "date",
+        "Song": "title",
+        "Artist": "artist",
+        "Peak Position": "peak_pos",
+        "Weeks in Charts": "weeks_on_chart",
+    })
+    df["peak_pos"] = pd.to_numeric(df["peak_pos"], errors="coerce")
+    df["weeks_on_chart"] = pd.to_numeric(df["weeks_on_chart"], errors="coerce")
+    df["year"] = pd.to_datetime(df["date"], errors="coerce").dt.year
+    df = df.dropna(subset=["peak_pos", "weeks_on_chart", "year"])
+
+    df["key_title"] = df["title"].map(normalize_title)
+    df["key_artist"] = df["artist"].map(normalize_artist)
+
+    chart_weeks_count = df.groupby(["key_title", "key_artist"])["date"].nunique().rename("sales_chart_weeks")
+
+    agg = df.groupby(["key_title", "key_artist"]).agg(
+        title=("title", "first"),
+        artist=("artist", "first"),
+        sales_peak=("peak_pos", "min"),
+        year=("year", "min"),
+    ).reset_index()
+
+    agg = agg.join(chart_weeks_count, on=["key_title", "key_artist"])
+    agg["sales_peak"] = agg["sales_peak"].astype(int)
+    agg["sales_chart_weeks"] = agg["sales_chart_weeks"].astype(int)
+    agg["year"] = agg["year"].astype(int)
+
+    # Same rolling-window era normalization as Billboard (see load_billboard).
+    peak_pct = rolling_percentile(
+        agg["year"], agg["sales_peak"], BILLBOARD_ERA_HALF_WINDOW, higher_is_better=False
+    )
+    weeks_pct = rolling_percentile(
+        agg["year"], agg["sales_chart_weeks"], BILLBOARD_ERA_HALF_WINDOW, higher_is_better=True
+    )
+    agg["sales_score"] = BILLBOARD_PEAK_WEIGHT * peak_pct + (1 - BILLBOARD_PEAK_WEIGHT) * weeks_pct
+
+    return agg[["key_title", "key_artist", "title", "artist", "sales_peak", "sales_chart_weeks", "sales_score"]]
+
+
 def load_kworb():
     path = os.path.join(DATA, "kworb_raw.csv")
     if not os.path.exists(path):
@@ -394,8 +442,9 @@ def _left_merge(merged, df, cols):
 # Spotify and YouTube are NOT listed here: kworb covers all eras, so absence
 # from those top lists is a genuine popularity signal, not an era artefact.
 _PLATFORM_START = {
-    "itunes_total": 2010,
-    "apple_total":  2017,
+    "itunes_total":   2010,
+    "apple_total":    2017,
+    "digital_sales":  2004,
 }
 
 
@@ -417,16 +466,17 @@ def _apply_weights(merged, available_dims):
     return (weighted_sum / denom).where(denominator > 0, other=0.0)
 
 
-def _cluster_all_sources(bb, kworb, youtube, itunes, apple):
+def _cluster_all_sources(bb, kworb, youtube, itunes, apple, digital_sales):
     """
-    Apply _cluster_key_artists across all five sources, so a song credited to
+    Apply _cluster_key_artists across all six sources, so a song credited to
     a different "primary" artist per source still merges into one row.
     """
     frames_and_cols = [(bb, "bb_score"), (kworb, "spotify_streams"), (youtube, "youtube_views"),
-                        (itunes, "itunes_total"), (apple, "apple_total")]
+                        (itunes, "itunes_total"), (apple, "apple_total"),
+                        (digital_sales, "sales_score")]
     non_empty = [df for df, _ in frames_and_cols if not df.empty]
     if not non_empty:
-        return bb, kworb, youtube, itunes, apple
+        return bb, kworb, youtube, itunes, apple, digital_sales
 
     cluster_map = _cluster_key_artists(non_empty)
     return tuple(
@@ -435,7 +485,7 @@ def _cluster_all_sources(bb, kworb, youtube, itunes, apple):
     )
 
 
-def _build_song_list(bb, kworb, youtube, itunes, apple):
+def _build_song_list(bb, kworb, youtube, itunes, apple, digital_sales):
     """
     Concat every source's (key_title, key_artist, title, artist) rows into
     one list, preferring kworb's own credit for songs flagged "authoritative"
@@ -448,7 +498,7 @@ def _build_song_list(bb, kworb, youtube, itunes, apple):
         auth_kworb = kworb[kworb["authoritative"]]
         if not auth_kworb.empty:
             dfs.append(auth_kworb[cols])
-    dfs.extend(df[cols] for df in (bb, kworb, youtube, itunes, apple) if not df.empty)
+    dfs.extend(df[cols] for df in (bb, kworb, youtube, itunes, apple, digital_sales) if not df.empty)
     return dfs
 
 
@@ -458,10 +508,13 @@ def compute_scores(songs_only=False):
     youtube = load_youtube()
     itunes = load_itunes()
     apple = load_apple_music()
+    digital_sales = load_digital_sales()
 
-    bb, kworb, youtube, itunes, apple = _cluster_all_sources(bb, kworb, youtube, itunes, apple)
+    bb, kworb, youtube, itunes, apple, digital_sales = _cluster_all_sources(
+        bb, kworb, youtube, itunes, apple, digital_sales
+    )
 
-    dfs = _build_song_list(bb, kworb, youtube, itunes, apple)
+    dfs = _build_song_list(bb, kworb, youtube, itunes, apple, digital_sales)
     if not dfs:
         print("ERROR: No source data found. Run the fetchers first.")
         return
@@ -482,6 +535,7 @@ def compute_scores(songs_only=False):
     merged = _left_merge(merged, youtube, ["youtube_views"])
     merged = _left_merge(merged, itunes,  ["itunes_total"])
     merged = _left_merge(merged, apple,   ["apple_total"])
+    merged = _left_merge(merged, digital_sales, ["sales_score", "sales_peak", "sales_chart_weeks"])
 
     # Era-normalise all streaming/chart-point dimensions by release decade.
     # Songs missing a decade (source-only, no Billboard year) fall into a
@@ -504,6 +558,7 @@ def compute_scores(songs_only=False):
         "youtube_views":   "yt_score",
         "itunes_total":    "itunes_score",
         "apple_total":     "apple_score",
+        "digital_sales":   "sales_score",
     }
     available_dims = {k: v for k, v in dim_cols.items() if v in merged.columns}
     merged["final_score"] = _apply_weights(merged, available_dims)

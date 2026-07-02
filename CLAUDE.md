@@ -62,8 +62,15 @@ fetch_kworb.py        →  data/kworb_raw.csv          →  score.py → data/sc
 fetch_youtube.py      →  data/youtube_raw.csv        ↗                              ├─ fetch_spotify_links.py → data/spotify_links.csv
 fetch_itunes.py       →  data/itunes_raw.csv         ↗                              └─ export_csv.py → output/music_index_full.csv
 fetch_apple_music.py  →  data/apple_music_raw.csv   ↗
+       (no fetcher)   →  data/digital.csv           ↗
                                                              load_billboard() → export_billboard.py → output/billboard.html
 ```
+
+`data/digital.csv` (Billboard's Digital Song Sales chart, same shape as `hot100.csv`)
+has no fetcher script yet — it was scraped by hand/other tooling and just needs to
+stay in `data/` for `score.py`'s `load_digital_sales()` to pick it up. The chart only
+goes back to 2004-10-20 (no digital sales before iTunes), so pre-2004 songs are
+excluded from that dimension's weight rather than penalized (see `_PLATFORM_START`).
 
 `export_csv.py` joins `data/scores.csv` with the cached `data/spotify_links.csv` into
 `output/music_index_full.csv` (full ranking, all columns + `spotify_url`). `run_pipeline.py`
@@ -76,6 +83,7 @@ chains score → fetch_spotify_links → export_csv → export → export_billbo
 - YouTube score: percentile rank of `youtube_views` (top video per song) within the song's release decade
 - iTunes score: percentile rank of `itunes_total` (cumulative chart points since Aug 2010) within the song's release decade
 - Apple Music score: percentile rank of `apple_total` (cumulative chart points since Jul 2017) within the song's release decade
+- Digital sales score: `0.6 × peak_pct + 0.4 × weeks_pct` on the Digital Song Sales chart (same rolling-window formula as Billboard, since Oct 2004)
 - Composite: weighted sum of all available dimension scores, then normalized to 0–100
 - Weights and `TOP_N` are configured in `config.py`
 

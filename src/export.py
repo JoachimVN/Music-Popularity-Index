@@ -43,6 +43,8 @@ def export():
         year        = f"{int(row['year'])}" if pd.notna(row.get("year")) else "—"
         bb_peak     = f"#{int(row['bb_peak'])}" if pd.notna(row.get("bb_peak")) else "—"
         bb_weeks    = f"{int(row['bb_chart_weeks'])}w" if pd.notna(row.get("bb_chart_weeks")) else "—"
+        sales_peak  = f"#{int(row['sales_peak'])}" if pd.notna(row.get("sales_peak")) else "—"
+        sales_weeks = f"{int(row['sales_chart_weeks'])}w" if pd.notna(row.get("sales_chart_weeks")) else "—"
         sp_streams  = fmt_int(row.get("spotify_streams"), is_floor=bool(row.get("spotify_streams_is_floor")))
         yt_views    = fmt_int(row.get("youtube_views"))
         itunes_pts  = fmt_int(row.get("itunes_total"))
@@ -64,6 +66,8 @@ def export():
           <td class="score">{score:.1f}</td>
           <td>{bb_peak}</td>
           <td>{bb_weeks}</td>
+          <td>{sales_peak}</td>
+          <td>{sales_weeks}</td>
           <td class="num">{sp_streams}</td>
           <td class="num">{yt_views}</td>
           <td class="num">{itunes_pts}</td>
@@ -126,6 +130,8 @@ def export():
         <th><button type="button" class="sort-btn">Score</button></th>
         <th><button type="button" class="sort-btn">BB Peak</button></th>
         <th><button type="button" class="sort-btn">BB Weeks</button></th>
+        <th><button type="button" class="sort-btn">Sales Peak</button></th>
+        <th><button type="button" class="sort-btn">Sales Weeks</button></th>
         <th><button type="button" class="sort-btn">Spotify</button></th>
         <th><button type="button" class="sort-btn">YouTube</button></th>
         <th><button type="button" class="sort-btn">iTunes</button></th>
