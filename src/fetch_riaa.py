@@ -80,27 +80,36 @@ def _fetch_window(d_from, d_to, award="", type_=""):
     raise RuntimeError(f"Gave up after repeated failures fetching {d_from}..{d_to} (award={award!r}, type={type_!r})")
 
 
+def _text_or_none(tag):
+    # Guards the .get_text() call directly against the tag it's called on,
+    # rather than relying on a null check elsewhere in the caller — a Tag's
+    # __bool__ falls back to child count, so an empty-but-present tag would
+    # be falsy; check "is None" explicitly instead of truthiness.
+    return tag.get_text(strip=True) if tag is not None else None
+
+
 def _parse_rows(html):
     soup = BeautifulSoup(html, "lxml")
     records = []
     for tr in soup.select("tr.table_award_row"):
-        # BeautifulSoup Tag.__bool__ falls back to child count, so an empty-
-        # but-present tag would be falsy — check "is None" explicitly rather
-        # than relying on truthiness to tell "not found" from "found but empty".
         award_tag = tr.find(attrs={"data-share-desc": True})
         tier = None
         if award_tag is not None:
             m = _TIER_RE.search(award_tag["data-share-desc"])
             if m:
                 tier = m.group(1)
-        artist_td = tr.find("td", class_="artists_cell")
+
         others = tr.find_all("td", class_="others_cell")
-        if artist_td is None or len(others) < 2 or not tier:
+        artist = _text_or_none(tr.find("td", class_="artists_cell"))
+        title = _text_or_none(others[0]) if len(others) > 0 else None
+        cert_date = _text_or_none(others[1]) if len(others) > 1 else None
+
+        if artist is None or title is None or cert_date is None or tier is None:
             continue
         records.append({
-            "artist": artist_td.get_text(strip=True),
-            "title": others[0].get_text(strip=True),
-            "cert_date": others[1].get_text(strip=True),
+            "artist": artist,
+            "title": title,
+            "cert_date": cert_date,
             "award_tier": tier,
         })
     return records
