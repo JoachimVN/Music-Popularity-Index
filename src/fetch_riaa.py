@@ -84,15 +84,18 @@ def _parse_rows(html):
     soup = BeautifulSoup(html, "lxml")
     records = []
     for tr in soup.select("tr.table_award_row"):
+        # BeautifulSoup Tag.__bool__ falls back to child count, so an empty-
+        # but-present tag would be falsy — check "is None" explicitly rather
+        # than relying on truthiness to tell "not found" from "found but empty".
         award_tag = tr.find(attrs={"data-share-desc": True})
         tier = None
-        if award_tag:
+        if award_tag is not None:
             m = _TIER_RE.search(award_tag["data-share-desc"])
             if m:
                 tier = m.group(1)
         artist_td = tr.find("td", class_="artists_cell")
         others = tr.find_all("td", class_="others_cell")
-        if not artist_td or len(others) < 2 or not tier:
+        if artist_td is None or len(others) < 2 or not tier:
             continue
         records.append({
             "artist": artist_td.get_text(strip=True),

@@ -278,7 +278,9 @@ def load_apple_music():
 # the index's entire 1958-present range, so it isn't era-gated in
 # _PLATFORM_START — it's meant to give pre-streaming songs a second all-era
 # signal alongside Billboard.
-_RIAA_TIER_RE = re.compile(r"(?:(\d+)x\s*)?(gold|platinum|diamond)", re.I)
+# Digit run is bounded (real RIAA multipliers top out around 30x) so a
+# non-matching string can't force super-linear backtracking via .search().
+_RIAA_TIER_RE = re.compile(r"(?:(\d{1,3})x\s*)?(gold|platinum|diamond)", re.I)
 _RIAA_BASE_UNITS = {"gold": 500_000, "platinum": 1_000_000, "diamond": 10_000_000}
 
 
