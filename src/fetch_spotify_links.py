@@ -41,18 +41,26 @@ def _nd(s):
 # Split off collaborators on the *raw* string before _nd() strips the ","/";"
 # separators Exportify uses for multi-artist credits (e.g. "Rihanna;Mikky Ekko"),
 # otherwise the separator disappears and _primary() returns mangled garbage.
-# The lookahead on the word-separator branch requires real content after it,
-# so a trailing "X" (as in "Lil Nas X") isn't mistaken for a separator.
-_PRIMARY_SEP_RE = re.compile(
-    r"[;,:]|\b(?:featuring|feat\.?|ft\.?|with|and|x)\b(?=\s*\S)|&", re.IGNORECASE
-)
+#
+# Keyword separators (featuring/feat/ft/with) and punctuation are stripped
+# first, greedily removing everything after them — only *then* do we check
+# the ambiguous "x"/"&" case. Order matters: without it, "Lil Nas X
+# Featuring Billy Ray Cyrus" would match "x" (it's followed by "Featuring...",
+# which satisfies "real content follows") before the featuring-strip ever
+# runs, wrongly cutting the "X" off his stage name. Stripping "Featuring..."
+# first removes that trailing content, so by the time the x/& check runs,
+# "Lil Nas X" has nothing after it and is correctly left alone.
+_KEYWORD_SEP_RE = re.compile(r"\b(?:featuring|feat\.?|ft\.?|with)\b.*", re.IGNORECASE)
+_PUNCT_SEP_RE = re.compile(r"[;,:].*")
+_AMBIGUOUS_SEP_RE = re.compile(r"\b(?:and|x)\b(?=\s*\S).*|&.*", re.IGNORECASE)
 
 
 def _primary(a):
     a = str(a)
-    m = _PRIMARY_SEP_RE.search(a)
-    first = a[: m.start()] if m else a
-    return _nd(first)
+    a = _KEYWORD_SEP_RE.sub("", a, count=1)
+    a = _PUNCT_SEP_RE.sub("", a, count=1)
+    a = _AMBIGUOUS_SEP_RE.sub("", a, count=1)
+    return _nd(a)
 
 
 # Column names vary slightly between Exportify export types
