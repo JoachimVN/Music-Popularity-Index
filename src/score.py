@@ -280,23 +280,26 @@ def load_apple_music():
 # signal alongside Billboard.
 # Digit run is bounded (real RIAA multipliers top out around 30x) so a
 # non-matching string can't force super-linear backtracking via .search().
-_RIAA_TIER_RE = re.compile(r"(?:(\d{1,3})x\s*)?(gold|platinum|diamond)", re.I)
+# The multiplier can be fractional (e.g. "0.6x Diamond" — RIAA re-expresses
+# a certification against a threshold that was revised after the original
+# filing), so allow an optional decimal part.
+_RIAA_TIER_RE = re.compile(r"(?:(\d{1,3}(?:\.\d+)?)x\s*)?(gold|platinum|diamond)", re.I)
 _RIAA_BASE_UNITS = {"gold": 500_000, "platinum": 1_000_000, "diamond": 10_000_000}
 # RIAA's Latin track uses much lower unit thresholds than the standard track
-# (Platino=60,000 vs Platinum=1,000,000 — see
-# https://www.riaa.com/gold-platinum/certification-criteria/), but the site
-# labels both tracks "Gold"/"Platinum" identically, so a scraped tier string
-# alone can't tell them apart (see fetch_riaa.py's scrape_latin()). No
-# confirmed Latin-specific Diamond threshold exists, so Diamond falls back
-# to the standard base regardless of track.
-_RIAA_LATIN_BASE_UNITS = {"gold": 30_000, "platinum": 60_000, "diamond": 10_000_000}
+# — Oro=30,000, Platino=60,000, Diamante=600,000 (10x Platino) — see
+# https://www.riaa.com/gold-platinum/certification-criteria/ and
+# https://www.riaa.com/j-balvin-earns-first-ever-latin-digital-diamond-honor/.
+# The site labels all three tracks' tiers "Gold"/"Platinum"/"Diamond"
+# identically, so a scraped tier string alone can't tell them apart (see
+# fetch_riaa.py's scrape_latin()).
+_RIAA_LATIN_BASE_UNITS = {"gold": 30_000, "platinum": 60_000, "diamond": 600_000}
 
 
 def _riaa_tier_to_units(tier, is_latin=False):
     m = _RIAA_TIER_RE.search(str(tier))
     if not m:
         return None
-    mult = int(m.group(1)) if m.group(1) else 1
+    mult = float(m.group(1)) if m.group(1) else 1
     base_units = _RIAA_LATIN_BASE_UNITS if is_latin else _RIAA_BASE_UNITS
     return mult * base_units[m.group(2).lower()]
 
