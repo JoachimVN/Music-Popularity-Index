@@ -25,22 +25,32 @@ source of truth for a Name-That-Tune-style music quiz game.
 
 ### Scoring (summary)
 
-Eight weighted dimensions, each era-normalized (see `config.py` for exact weights,
-which currently sum to: Billboard 30%, Spotify 17%, YouTube 11%, RIAA certifications
-15%, Digital Sales 8%, iTunes 7%, Apple Music 7%, Radio Airplay 5%):
+Eight weighted dimensions, each era-normalized so songs from different decades are
+comparable. Exact weights live in `config.py`:
 
-- **Billboard**, **Digital Sales**, **Radio Airplay**: `0.6 × peak_pct + 0.4 × weeks_pct`
-  on the respective chart, ranked against songs released within a ±5-year window.
-- **Spotify**, **YouTube**, **iTunes**, **Apple Music**: percentile rank of the raw
-  count within the song's release decade.
+| Dimension | Weight | Era-normalized by | Applies to songs from |
+|---|---|---|---|
+| Billboard | 30% | ±5-year rolling window | all eras |
+| Spotify | 17% | release decade | all eras |
+| RIAA certifications | 15% | release decade | all eras |
+| YouTube | 11% | release decade | all eras |
+| Digital Sales | 8% | ±5-year rolling window | 2004+ |
+| iTunes | 7% | release decade | 2010+ |
+| Apple Music | 7% | release decade | 2017+ |
+| Radio Airplay | 5% | ±5-year rolling window | 1990+ |
+
+- **Billboard / Digital Sales / Radio Airplay**: `0.6 × peak_pct + 0.4 × weeks_pct`
+  on the respective chart.
+- **Spotify / YouTube / iTunes / Apple Music**: percentile rank of the raw count.
 - **RIAA certifications**: percentile rank of certified units (Gold/Platinum/Diamond,
-  with `Nx` multipliers) within the song's release decade — the one dimension that
-  isn't era-gated, since RIAA has certified singles since 1958 and this is meant to
-  give pre-streaming songs a second all-era signal besides Billboard.
-- Composite is normalized to 0–100. Digital Sales, iTunes, Apple Music, and Radio
-  Airplay are era-gated (`config.py`'s `_PLATFORM_START` in `score.py`) so songs
-  released before each platform existed aren't penalized for an absence beyond
-  their control.
+  with `Nx` multipliers) — the one *all-era* dimension besides Billboard/Spotify/
+  YouTube, since RIAA has certified singles since 1958 and this is meant to give
+  pre-streaming songs a second signal to lean on.
+- Dimensions marked with a start year in the table above are era-gated
+  (`config.py`'s `_PLATFORM_START` in `score.py`): songs released before that
+  platform existed are excluded from the denominator rather than penalized for an
+  absence beyond their control.
+- Composite is normalized to 0–100.
 - `output/index.html` has an in-browser weight adjuster — type a weight (%) per
   dimension and the table re-ranks live in your browser, no server round-trip.
 
