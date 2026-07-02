@@ -42,9 +42,12 @@ def normalize_title(t):
 # different spelling/abbreviation for the same act. A short explicit alias
 # list beats a fragile regex that risks merging unrelated artists.
 _ARTIST_ALIASES = {
-    "soulja boy tellem": "soulja boy",        # Billboard: "Soulja Boy Tell'em"; kworb/Spotify: "Soulja Boy"
-    "lillywood": "lilly wood and the prick",  # Billboard mis-scrapes "Lilly Wood and The Prick" as "Lillywood"
-    "lady a": "lady antebellum",              # band's post-2020 rebrand; Billboard still credits the old name for older chart entries
+    # Billboard spells this act's name out in full; kworb/Spotify shorten it.
+    "soulja boy tellem": "soulja boy",
+    # Billboard mis-scrapes the full band name down to just the first word.
+    "lillywood": "lilly wood and the prick",
+    # Band's post-2020 rebrand; Billboard still credits the old name on older chart entries.
+    "lady a": "lady antebellum",
 }
 
 
@@ -414,6 +417,41 @@ def _apply_weights(merged, available_dims):
     return (weighted_sum / denom).where(denominator > 0, other=0.0)
 
 
+def _cluster_all_sources(bb, kworb, youtube, itunes, apple):
+    """
+    Apply _cluster_key_artists across all five sources, so a song credited to
+    a different "primary" artist per source still merges into one row.
+    """
+    frames_and_cols = [(bb, "bb_score"), (kworb, "spotify_streams"), (youtube, "youtube_views"),
+                        (itunes, "itunes_total"), (apple, "apple_total")]
+    non_empty = [df for df, _ in frames_and_cols if not df.empty]
+    if not non_empty:
+        return bb, kworb, youtube, itunes, apple
+
+    cluster_map = _cluster_key_artists(non_empty)
+    return tuple(
+        _apply_artist_clusters(df, cluster_map, value_col=col) if not df.empty else df
+        for df, col in frames_and_cols
+    )
+
+
+def _build_song_list(bb, kworb, youtube, itunes, apple):
+    """
+    Concat every source's (key_title, key_artist, title, artist) rows into
+    one list, preferring kworb's own credit for songs flagged "authoritative"
+    (see load_kworb) over Billboard's — drop_duplicates downstream keeps
+    whichever row appears first per key.
+    """
+    cols = ["key_title", "key_artist", "title", "artist"]
+    dfs = []
+    if not kworb.empty and "authoritative" in kworb.columns:
+        auth_kworb = kworb[kworb["authoritative"]]
+        if not auth_kworb.empty:
+            dfs.append(auth_kworb[cols])
+    dfs.extend(df[cols] for df in (bb, kworb, youtube, itunes, apple) if not df.empty)
+    return dfs
+
+
 def compute_scores(songs_only=False):
     bb = load_billboard()
     kworb = load_kworb()
@@ -421,44 +459,9 @@ def compute_scores(songs_only=False):
     itunes = load_itunes()
     apple = load_apple_music()
 
-    # Cluster (title, artist) pairs that likely refer to the same song but
-    # were credited to a different "primary" artist per source — see
-    # _cluster_key_artists.
-    frames_and_cols = [(bb, "bb_score"), (kworb, "spotify_streams"), (youtube, "youtube_views"),
-                        (itunes, "itunes_total"), (apple, "apple_total")]
-    non_empty = [df for df, _ in frames_and_cols if not df.empty]
-    if non_empty:
-        cluster_map = _cluster_key_artists(non_empty)
-        if not bb.empty:
-            bb = _apply_artist_clusters(bb, cluster_map, value_col="bb_score")
-        if not kworb.empty:
-            kworb = _apply_artist_clusters(kworb, cluster_map, value_col="spotify_streams")
-        if not youtube.empty:
-            youtube = _apply_artist_clusters(youtube, cluster_map, value_col="youtube_views")
-        if not itunes.empty:
-            itunes = _apply_artist_clusters(itunes, cluster_map, value_col="itunes_total")
-        if not apple.empty:
-            apple = _apply_artist_clusters(apple, cluster_map, value_col="apple_total")
+    bb, kworb, youtube, itunes, apple = _cluster_all_sources(bb, kworb, youtube, itunes, apple)
 
-    dfs = []
-    # kworb rows flagged "authoritative" (see load_kworb) win the display
-    # title/artist over every other source — put them first so drop_duplicates
-    # below keeps them instead of e.g. Billboard's credit.
-    if not kworb.empty and "authoritative" in kworb.columns:
-        auth_kworb = kworb[kworb["authoritative"]]
-        if not auth_kworb.empty:
-            dfs.append(auth_kworb[["key_title", "key_artist", "title", "artist"]])
-    if not bb.empty:
-        dfs.append(bb[["key_title", "key_artist", "title", "artist"]])
-    if not kworb.empty:
-        dfs.append(kworb[["key_title", "key_artist", "title", "artist"]])
-    if not youtube.empty:
-        dfs.append(youtube[["key_title", "key_artist", "title", "artist"]])
-    if not itunes.empty:
-        dfs.append(itunes[["key_title", "key_artist", "title", "artist"]])
-    if not apple.empty:
-        dfs.append(apple[["key_title", "key_artist", "title", "artist"]])
-
+    dfs = _build_song_list(bb, kworb, youtube, itunes, apple)
     if not dfs:
         print("ERROR: No source data found. Run the fetchers first.")
         return

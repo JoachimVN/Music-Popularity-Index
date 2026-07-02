@@ -41,13 +41,17 @@ def _nd(s):
 # Split off collaborators on the *raw* string before _nd() strips the ","/";"
 # separators Exportify uses for multi-artist credits (e.g. "Rihanna;Mikky Ekko"),
 # otherwise the separator disappears and _primary() returns mangled garbage.
-_PRIMARY_SPLIT_RE = re.compile(
-    r"\s*[;,:]\s*|\s+(?:featuring|feat\.?|ft\.?|with|x|and|&)\s+", re.IGNORECASE
+# The lookahead on the word-separator branch requires real content after it,
+# so a trailing "X" (as in "Lil Nas X") isn't mistaken for a separator.
+_PRIMARY_SEP_RE = re.compile(
+    r"[;,:]|\b(?:featuring|feat\.?|ft\.?|with|and|x)\b(?=\s*\S)|&", re.IGNORECASE
 )
 
 
 def _primary(a):
-    first = _PRIMARY_SPLIT_RE.split(str(a), maxsplit=1)[0]
+    a = str(a)
+    m = _PRIMARY_SEP_RE.search(a)
+    first = a[: m.start()] if m else a
     return _nd(first)
 
 
@@ -63,26 +67,33 @@ _COLUMN_SYNONYMS = {
 }
 
 
+def _load_exportify_file(path):
+    """Load one CSV as a (uri, title, artist, duration_ms, release_date) frame,
+    or None if it doesn't look like an Exportify export."""
+    try:
+        header = pd.read_csv(path, nrows=0).columns
+        usecols, rename = [], {}
+        for canonical, synonyms in _COLUMN_SYNONYMS.items():
+            col = next((c for c in synonyms if c in header), None)
+            if col:
+                usecols.append(col)
+                rename[col] = canonical
+
+        if not {"uri", "title", "artist"} <= set(rename.values()):
+            return None
+
+        df = pd.read_csv(path, usecols=usecols).rename(columns=rename)
+        for missing in ("duration_ms", "release_date"):
+            if missing not in df.columns:
+                df[missing] = pd.NA
+        return df
+    except Exception:
+        return None
+
+
 def _build_lookup():
-    frames = []
-    for path in sorted(glob.glob(os.path.join(DATA_DIR, "*.csv"))):
-        try:
-            header = pd.read_csv(path, nrows=0).columns
-            usecols, rename = [], {}
-            for canonical, synonyms in _COLUMN_SYNONYMS.items():
-                col = next((c for c in synonyms if c in header), None)
-                if col:
-                    usecols.append(col)
-                    rename[col] = canonical
-            if "uri" not in rename.values() or "title" not in rename.values() or "artist" not in rename.values():
-                continue
-            df = pd.read_csv(path, usecols=usecols).rename(columns=rename)
-            for missing in ("duration_ms", "release_date"):
-                if missing not in df.columns:
-                    df[missing] = pd.NA
-            frames.append(df)
-        except Exception:
-            pass
+    paths = sorted(glob.glob(os.path.join(DATA_DIR, "*.csv")))
+    frames = [f for f in (_load_exportify_file(p) for p in paths) if f is not None]
 
     if not frames:
         return None, None
