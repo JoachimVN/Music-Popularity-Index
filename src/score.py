@@ -25,6 +25,10 @@ def _strip_diacritics(s):
 
 def normalize_title(t):
     t = _strip_diacritics(str(t).lower().strip())
+    # Curly/smart quotes (RIAA's site favours "’" U+2019) vs straight ASCII
+    # apostrophes (most other sources) — normalize before anything below
+    # keys off a literal "'", e.g. the "in'" -> "ing" contraction rule.
+    t = t.replace("’", "'").replace("‘", "'")
     t = re.sub(r"\([^\)]*\)", "", t)
     t = re.sub(r"\[[^\]]*\]", "", t)
     # Exportify's " - Single Version"/" - Remastered 2011"/" - Radio Edit"
@@ -79,6 +83,7 @@ _ARTIST_ALIASES = {
 
 def normalize_artist(a):
     a = _strip_diacritics(str(a).lower().strip())
+    a = a.replace("’", "'").replace("‘", "'")  # curly vs straight apostrophe (see normalize_title)
     a = a.replace("$", "s")  # stylized stage names, e.g. "Ke$ha" -> kworb's "Kesha"
     # A leading "The" is inconsistently included across sources for the same
     # act (Billboard: "The Black Eyed Peas", kworb: "Black Eyed Peas") — drop
