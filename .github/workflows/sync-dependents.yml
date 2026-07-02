@@ -52,7 +52,7 @@ jobs:
       - name: Clone Versed repo
         env:
           VERSED_TOKEN: ${{ secrets.VERSED_TOKEN }}
-        run: git clone "https://x-access-token:${VERSED_TOKEN}@github.com/JoachimVN/Versed.git" versed
+        run: git clone --branch dev "https://x-access-token:${VERSED_TOKEN}@github.com/JoachimVN/Versed.git" versed
 
       - name: Sync scored CSV -> server/src/data/
         run: |
