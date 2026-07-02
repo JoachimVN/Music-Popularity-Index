@@ -48,6 +48,12 @@ def normalize_title(t):
     if "/" in t:
         parts = sorted(p.strip() for p in t.split("/") if p.strip())
         t = " ".join(parts)
+    # Contracted "-in'" vs full "-ing" is the single most common cross-source
+    # title mismatch (e.g. "Walkin'" vs "Walking", "Comin'" vs "Coming") —
+    # normalize to "ing" whenever the source actually spelled it with the
+    # apostrophe, so this doesn't false-positive on real words like "cabin"
+    # that just happen to end in "in" with no apostrophe.
+    t = re.sub(r"in'(\s|$)", r"ing\1", t)
     t = re.sub(r"[^\w\s]", "", t)
     return re.sub(r"\s+", " ", t).strip()
 
@@ -63,6 +69,11 @@ _ARTIST_ALIASES = {
     "lillywood": "lilly wood and the prick",
     # Band's post-2020 rebrand; Billboard still credits the old name on older chart entries.
     "lady a": "lady antebellum",
+    # Billboard's own scrape for this credit has no separator at all between
+    # the two artists ("Jay Z Kanye West"), unlike every other multi-artist
+    # credit in the same file — nothing for a generic separator rule to key
+    # off, so it's listed here instead of guessed at with a fragile regex.
+    "jay z kanye west": "jayz",
 }
 
 
