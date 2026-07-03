@@ -40,14 +40,19 @@ python src/fetch_youtube.py       # scrapes kworb.net all-time YouTube view coun
 python src/fetch_itunes.py        # scrapes kworb.net worldwide iTunes chart point totals
 python src/fetch_apple_music.py   # scrapes kworb.net Apple Music chart point totals
 python src/fetch_riaa.py          # scrapes RIAA Gold/Platinum/Diamond single certifications (resumable, can take hours)
+python src/fetch_album_art.py     # resolves album art via Spotify's public oEmbed endpoint (resumable, no API keys)
 ```
+
+`fetch_album_art.py` is also not part of `run_pipeline.py` — run it manually after
+`fetch_spotify_links.py` has resolved this run's tracks, then re-run `export_csv.py`
+(or the full runner) to merge `data/album_art.csv` into the output.
 
 Individual downstream steps (what the runner calls, in order):
 
 ```bash
 python src/score.py               # merges data and writes data/scores.csv
 python src/fetch_spotify_links.py # looks up Spotify URLs for top TOP_N songs (cached)
-python src/export_csv.py          # merges scores + links -> output/music_index_full.csv
+python src/export_csv.py          # merges scores + links + album art -> output/music_index_full.csv
 python src/export.py              # writes output/index.html
 python src/export_billboard.py    # writes output/billboard.html
 ```
@@ -60,8 +65,8 @@ This is a batch data pipeline with no tests or build system. All state lives in 
 ```
 fetch_billboard.py    →  data/hot100.csv            ↘
 fetch_kworb.py        →  data/kworb_raw.csv          →  score.py → data/scores.csv ─┬─ export.py → output/index.html
-fetch_youtube.py      →  data/youtube_raw.csv        ↗                              ├─ fetch_spotify_links.py → data/spotify_links.csv
-fetch_itunes.py       →  data/itunes_raw.csv         ↗                              └─ export_csv.py → output/music_index_full.csv
+fetch_youtube.py      →  data/youtube_raw.csv        ↗                              ├─ fetch_spotify_links.py → data/spotify_links.csv ─┐
+fetch_itunes.py       →  data/itunes_raw.csv         ↗                              └─ export_csv.py → output/music_index_full.csv ←──┴─ fetch_album_art.py → data/album_art.csv
 fetch_apple_music.py  →  data/apple_music_raw.csv   ↗
        (no fetcher)   →  data/digital.csv           ↗
        (no fetcher)   →  data/radio.csv             ↗
@@ -94,9 +99,23 @@ with zero real certifications don't get endlessly re-fetched) and can take
 hours for a full historical run given the request volume in recent
 high-certification years.
 
-`export_csv.py` joins `data/scores.csv` with the cached `data/spotify_links.csv` into
-`output/music_index_full.csv` (full ranking, all columns + `spotify_url`). `run_pipeline.py`
-chains score → fetch_spotify_links → export_csv → export → export_billboard.
+`export_csv.py` joins `data/scores.csv` with the cached `data/spotify_links.csv` and
+`data/album_art.csv` into `output/music_index_full.csv` (full ranking, all columns +
+`spotify_url` + `album_art_url`). `run_pipeline.py` chains score → fetch_spotify_links
+→ export_csv → export → export_billboard (album art is fetched separately, see below).
+
+**`fetch_album_art.py`** resolves each song's album art through Spotify's public
+oEmbed endpoint (`open.spotify.com/oembed?url=<track_url>`) — the same
+unauthenticated endpoint Slack/Discord/etc. use for link-preview cards. It needs
+no client credentials and isn't part of the Web API's per-app quota, unlike
+`fetch_artist.py`'s single-track endpoint (see that script's docstring — a prior
+run against the authenticated Web API got this app rate-limited for 24 hours).
+Reads track URLs straight from `data/spotify_links.csv` (title/artist matching is
+already solved there), fetches one at a time with a small delay, and saves
+progress every 25 songs so an interrupted or re-run pass only fetches what's
+still missing from `data/album_art.csv`. The consuming app (Versed) reads
+`album_art_url` from the merged CSV and only falls back to a live Spotify call
+for tracks this hasn't covered yet.
 
 **Scoring logic (`src/score.py`):**
 - All three streaming dimensions are era-normalized via within-decade percentile rank so songs from different eras are directly comparable.

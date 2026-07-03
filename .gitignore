@@ -7,11 +7,12 @@ __pycache__/
 # data/* (not data/) so git still traverses in to check the exceptions below
 # — a bare "data/" blocks negation of files inside it entirely.
 data/*
-# The two derived files output/ is built from, tracked so CI can rebuild
-# output/ on every push to main without needing the raw scraped sources
-# (which are gitignored and can take hours to re-scrape).
+# The derived files output/ is built from, tracked so CI can rebuild output/
+# on every push to main without needing the raw scraped sources (which are
+# gitignored and can take hours/API-quota to re-scrape).
 !data/scores.csv
 !data/spotify_links.csv
+!data/album_art.csv
 venv/
 .venv/
 # Build dir is ignored except the published pages, which are deployed to joavn.dev/mpi,
