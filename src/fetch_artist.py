@@ -74,6 +74,8 @@ def _scrape_kworb(artist_id):
     soup = BeautifulSoup(resp.text, "lxml")
 
     table = soup.find("table", class_="addpos")
+    if table is None:
+        raise SystemExit(f"No songs table found on kworb page for artist {artist_id!r} — page layout may have changed")
     rows = table.find("tbody").find_all("tr")
 
     records = []
