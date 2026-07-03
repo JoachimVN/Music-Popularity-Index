@@ -10,7 +10,7 @@ artist — otherwise we'd risk matching e.g. "Golden" by Harry Styles to the
 HUNTR/X version).
 No API calls — instant and rate-limit-free.
 
-Output: data/spotify_links.csv  (title, artist, spotify_url, duration_ms, release_year)
+Output: data/spotify_links.csv  (title, artist, spotify_url, duration_ms, release_year, tempo)
 """
 
 import re
@@ -72,6 +72,7 @@ _COLUMN_SYNONYMS = {
     "artist":       ["Artist Name(s)"],
     "duration_ms":  ["Duration (ms)", "Track Duration (ms)"],
     "release_date": ["Release Date", "Album Release Date"],
+    "tempo":        ["Tempo"],
 }
 
 
@@ -91,7 +92,7 @@ def _load_exportify_file(path):
             return None
 
         df = pd.read_csv(path, usecols=usecols).rename(columns=rename)
-        for missing in ("duration_ms", "release_date"):
+        for missing in ("duration_ms", "release_date", "tempo"):
             if missing not in df.columns:
                 df[missing] = pd.NA
         return df
@@ -111,6 +112,7 @@ def _build_lookup():
         "spotify:track:", "https://open.spotify.com/track/", regex=False
     )
     combined["duration_ms"] = pd.to_numeric(combined["duration_ms"], errors="coerce")
+    combined["tempo"] = pd.to_numeric(combined["tempo"], errors="coerce")
     combined["release_year"] = pd.to_datetime(
         combined["release_date"], errors="coerce"
     ).dt.year
@@ -126,7 +128,7 @@ def _build_lookup():
     combined["kp"] = combined["artist"].map(_primary)
     print(f"  Loaded {len(combined):,} tracks from {len(frames)} CSV file(s)", flush=True)
 
-    meta_cols = ["url", "duration_ms", "release_year"]
+    meta_cols = ["url", "duration_ms", "release_year", "tempo"]
     by_both = combined.drop_duplicates(subset=["kt", "kp"]).set_index(["kt", "kp"])[meta_cols]
 
     # Title-only fallback: only keep titles where every row shares the same
@@ -171,6 +173,7 @@ def fetch_all():
             "spotify_url": match["url"] if match is not None else "",
             "duration_ms": match["duration_ms"] if match is not None else pd.NA,
             "release_year": match["release_year"] if match is not None else pd.NA,
+            "tempo": match["tempo"] if match is not None else pd.NA,
         })
 
     df = pd.DataFrame(rows)

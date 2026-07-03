@@ -91,6 +91,17 @@ python src/run_pipeline.py           # score -> spotify links -> csv -> html
 python src/run_pipeline.py --quick   # fast iteration: score -> csv only (no network, no html)
 ```
 
+Album art is a separate, manual step (like the scrapers above, not part of the
+runner — it's a slow external fetch, not a local merge):
+
+```bash
+python src/fetch_album_art.py     # album art via Spotify's public oEmbed endpoint (no API keys, resumable)
+```
+
+Run it once after `fetch_spotify_links.py` has resolved this run's tracks, then
+re-run `export_csv.py` (or the full runner) to merge the art into the output CSV.
+Re-running `fetch_album_art.py` later only fetches songs newly added to the pool.
+
 Outputs land in `output/` (`index.html`, `billboard.html`, `music_index_full.csv`).
 Tune the song pool size with `TOP_N` in `config.py`.
 

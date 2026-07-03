@@ -1,9 +1,9 @@
 name: Sync to dependent repos
 
 # Rebuilds output/index.html and output/music_index_full.csv from the
-# tracked data/scores.csv + data/spotify_links.csv (not the raw scraped
-# sources, which are gitignored and can take hours to re-scrape), then
-# publishes to repos that depend on it:
+# tracked data/scores.csv + data/spotify_links.csv + data/album_art.csv (not
+# the raw scraped sources, which are gitignored and can take hours to
+# re-scrape), then publishes to repos that depend on it:
 #  - Portfolio (Vercel-deployed at joavn.dev): the built index page, served at joavn.dev/mpi.
 #  - Versed: the full scored CSV, which its server reads as a data file.
 # Mirrors the same pattern CHORIDOR-web uses.
@@ -22,6 +22,7 @@ on:
     paths:
       - 'data/scores.csv'
       - 'data/spotify_links.csv'
+      - 'data/album_art.csv'
       - 'src/export_csv.py'
       - 'src/export.py'
       - 'src/utils.py'
