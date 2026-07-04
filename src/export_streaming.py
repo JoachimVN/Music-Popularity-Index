@@ -1,6 +1,7 @@
 """
 Generates per-platform ranking pages showing raw values and era-normalised scores.
-Outputs: output/spotify.html, output/youtube.html, output/itunes.html, output/apple.html
+Outputs: output/billboard.html, output/spotify.html, output/youtube.html, output/itunes.html,
+output/apple.html, output/sales.html, output/riaa.html, output/radio_airplay.html
 """
 
 import os
@@ -14,6 +15,15 @@ BASE   = os.path.dirname(__file__)
 SCORES = os.path.join(BASE, "../data/scores.csv")
 
 PLATFORMS = [
+    {
+        "name":      "Billboard Hot 100",
+        "raw_col":   "bb_chart_weeks",
+        "score_col": "bb_score",
+        "label":     "Weeks Charted",
+        "coverage":  "Billboard Hot 100 chart, since 1958",
+        "color":     "#e0e0e0",
+        "output":    os.path.join(BASE, "../output/billboard.html"),
+    },
     {
         "name":      "Spotify",
         "raw_col":   "spotify_streams",

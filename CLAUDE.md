@@ -54,7 +54,7 @@ python src/score.py               # merges data and writes data/scores.csv
 python src/fetch_spotify_links.py # looks up Spotify URLs for top TOP_N songs (cached)
 python src/export_csv.py          # merges scores + links + album art -> output/music_index_full.csv
 python src/export.py              # writes output/index.html
-python src/export_billboard.py    # writes output/billboard.html
+python src/export_streaming.py    # writes per-platform pages (billboard.html, spotify.html, youtube.html, etc.)
 ```
 
 ## Architecture
@@ -71,7 +71,6 @@ fetch_apple_music.py  →  data/apple_music_raw.csv   ↗
        (no fetcher)   →  data/digital.csv           ↗
        (no fetcher)   →  data/radio.csv             ↗
 fetch_riaa.py          →  data/riaa_raw.csv          ↗
-                                                             load_billboard() → export_billboard.py → output/billboard.html
 ```
 
 `data/digital.csv` and `data/radio.csv` (Billboard's Digital Song Sales and Radio
@@ -102,7 +101,7 @@ high-certification years.
 `export_csv.py` joins `data/scores.csv` with the cached `data/spotify_links.csv` and
 `data/album_art.csv` into `output/music_index_full.csv` (full ranking, all columns +
 `spotify_url` + `album_art_url`). `run_pipeline.py` chains score → fetch_spotify_links
-→ export_csv → export → export_billboard (album art is fetched separately, see below).
+→ export_csv → export → export_streaming (album art is fetched separately, see below).
 
 **`fetch_album_art.py`** resolves each song's album art through Spotify's public
 oEmbed endpoint (`open.spotify.com/oembed?url=<track_url>`) — the same
