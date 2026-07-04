@@ -45775,7 +45775,10 @@
 
     // Returns this bar's markup plus its geometry, so the caller can track
     // the peak bar's position for the direct label without recomputing it.
-    function yearBarSvg(yr, i, counts, peakYear, slotW, plotH, yMax, labelYears) {
+    // `layout` bundles this render's shared, per-call-invariant values (counts,
+    // peakYear, slotW, plotH, yMax, labelYears) to stay under the parameter-count limit.
+    function yearBarSvg(yr, i, layout) {
+      const { counts, peakYear, slotW, plotH, yMax, labelYears } = layout;
       const count = counts.get(yr) || 0;
       const x = YEAR_MARGIN.left + i * slotW;
       const barW = Math.max(slotW - 2, 1);
@@ -45809,9 +45812,10 @@
       const labelYears = yearLabelSet(allYears, slotW);
 
       let svg = yearGridlinesSvg(plotH, yMax, step);
+      const barLayout = { counts, peakYear, slotW, plotH, yMax, labelYears };
       let peakX = 0, peakBarY = YEAR_MARGIN.top;
       allYears.forEach((yr, i) => {
-        const bar = yearBarSvg(yr, i, counts, peakYear, slotW, plotH, yMax, labelYears);
+        const bar = yearBarSvg(yr, i, barLayout);
         svg += bar.svg;
         if (bar.isPeak) { peakX = bar.x + bar.barW / 2; peakBarY = bar.y; }
       });
