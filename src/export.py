@@ -107,6 +107,107 @@ def _row_html(rank, row, links):
         </tr>"""
 
 
+def _bar_path(x, y, w, h):
+    # Rounded top corners, square baseline — the site's one bar-chart mark spec.
+    r = min(4, h / 2, w / 2)
+    return (
+        f"M{x:.2f},{y + h:.2f} L{x:.2f},{y + r:.2f} "
+        f"Q{x:.2f},{y:.2f} {x + r:.2f},{y:.2f} "
+        f"L{x + w - r:.2f},{y:.2f} "
+        f"Q{x + w:.2f},{y:.2f} {x + w:.2f},{y + r:.2f} "
+        f"L{x + w:.2f},{y + h:.2f} Z"
+    )
+
+
+def _nice_step(max_val, target_lines=4):
+    for step in (1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000):
+        if max_val / step <= target_lines:
+            return step
+    return 5000
+
+
+def _year_chart_html(df):
+    years = df["year"].dropna().astype(int)
+    missing = int(df["year"].isna().sum())
+    if years.empty:
+        return "", missing
+
+    counts = years.value_counts()
+    y0, y1 = int(years.min()), int(years.max())
+    all_years = list(range(y0, y1 + 1))
+    peak_year = counts.idxmax()
+    peak_count = int(counts.max())
+
+    step = _nice_step(peak_count)
+    y_max = -(-peak_count // step) * step  # round up to next multiple of step
+
+    view_w, view_h = 1000, 240
+    margin = {"left": 34, "right": 8, "top": 16, "bottom": 26}
+    plot_w = view_w - margin["left"] - margin["right"]
+    plot_h = view_h - margin["top"] - margin["bottom"]
+
+    n = len(all_years)
+    slot_w = plot_w / n
+
+    # Label every 5th year, plus the first/last year — but only if an edge
+    # year isn't too close to its neighboring mod-5 label to overlap it
+    # (labels are ~20px wide; slots can be a few px each at this many years).
+    min_gap_years = max(2, -(-20 // slot_w))
+    label_years = {yr for yr in all_years if yr % 5 == 0}
+    for edge in (y0, y1):
+        if all(abs(edge - ly) >= min_gap_years for ly in label_years):
+            label_years.add(edge)
+
+    gridlines = []
+    for i in range(int(y_max / step) + 1):
+        val = i * step
+        gy = margin["top"] + plot_h * (1 - val / y_max)
+        gridlines.append(
+            f'<line class="grid" x1="{margin["left"]}" y1="{gy:.2f}" '
+            f'x2="{view_w - margin["right"]}" y2="{gy:.2f}"/>'
+            f'<text class="axis-y" x="{margin["left"] - 6}" y="{gy:.2f}" '
+            f'text-anchor="end" dominant-baseline="middle">{val}</text>'
+        )
+
+    bars = []
+    for i, yr in enumerate(all_years):
+        count = int(counts.get(yr, 0))
+        x = margin["left"] + i * slot_w
+        bar_w = max(slot_w - 2, 1)
+        h = plot_h * (count / y_max) if y_max else 0
+        y = margin["top"] + plot_h - h
+        is_peak = yr == peak_year
+        bars.append(f"""
+          <g class="bar-group" tabindex="0" data-year="{yr}" data-count="{count}">
+            <rect class="bar-hit" x="{x:.2f}" y="{margin['top']:.2f}" width="{bar_w:.2f}" height="{plot_h:.2f}"/>
+            <path class="bar{' bar-peak' if is_peak else ''}" d="{_bar_path(x, y, bar_w, h)}"/>
+          </g>""")
+        if yr in label_years:
+            lx = x + bar_w / 2
+            bars.append(
+                f'<text class="axis-x" x="{lx:.2f}" y="{view_h - margin["bottom"] + 16}" '
+                f'text-anchor="middle">{yr}</text>'
+            )
+
+    peak_i = all_years.index(peak_year)
+    peak_x = margin["left"] + peak_i * slot_w + max(slot_w - 2, 1) / 2
+    peak_y = margin["top"] + plot_h - plot_h * (peak_count / y_max) if y_max else margin["top"]
+    peak_label = (
+        f'<text class="bar-peak-label" x="{peak_x:.2f}" y="{max(peak_y - 8, 10):.2f}" '
+        f'text-anchor="middle">{peak_count}</text>'
+    )
+
+    svg = f"""
+      <svg class="year-chart" viewBox="0 0 {view_w} {view_h}" role="img"
+           aria-label="Number of songs by release year, {y0}–{y1}, peaking at {peak_count} in {peak_year}">
+        {''.join(gridlines)}
+        {''.join(bars)}
+        {peak_label}
+      </svg>"""
+
+    return svg, missing
+
+
 def _weight_field_html(key):
     return f"""
         <div class="weight-field">
@@ -134,6 +235,11 @@ def export():
 
     rows_html = "".join(_row_html(rank, row, links) for rank, row in df.iterrows())
     weight_rows_html = "".join(_weight_field_html(key) for key in DIM_COLS)
+    year_chart_svg, year_missing = _year_chart_html(df)
+    year_missing_note = ""
+    if year_missing:
+        plural = "" if year_missing == 1 else "s"
+        year_missing_note = f" · {year_missing} song{plural} missing a release year and excluded"
     updated = datetime.now(timezone.utc).strftime("%d %b %Y")
 
     html = f"""<!DOCTYPE html>
@@ -207,6 +313,32 @@ def export():
     .weights-panel .reset-btn:hover {{ background: #2a2a2a; color: #fff; }}
     .weights-panel .apply-btn {{ background: #1db954; border: 1px solid #1db954; color: #0f0f0f; font-weight: 600; }}
     .weights-panel .apply-btn:hover {{ background: #1ed760; }}
+    .chart-card {{ background: #161616; border: 1px solid #2a2a2a; border-radius: 8px;
+                   padding: 0.9rem 1.4rem; margin-bottom: 1.5rem; }}
+    .chart-card[open] {{ padding-bottom: 0.9rem; }}
+    .chart-card summary {{ font-size: 0.95rem; color: #eee; font-weight: 600; cursor: pointer;
+                            padding: 0.3rem 0; list-style: none; }}
+    .chart-card summary::-webkit-details-marker {{ display: none; }}
+    .chart-card summary::before {{ content: "▸ "; color: #666; display: inline-block; width: 1rem; }}
+    .chart-card[open] summary::before {{ content: "▾ "; }}
+    .chart-card summary:hover {{ color: #fff; }}
+    .chart-subtitle {{ color: #777; font-size: 0.78rem; margin: 0.5rem 0 0.4rem; }}
+    .year-chart-wrap {{ position: relative; }}
+    .year-chart {{ width: 100%; height: auto; display: block; overflow: visible; }}
+    .year-chart .grid {{ stroke: #262626; stroke-width: 1; }}
+    .year-chart .axis-y, .year-chart .axis-x {{ fill: #666; font-size: 9px; }}
+    .year-chart .bar {{ fill: #1db954; }}
+    .year-chart .bar-hit {{ fill: transparent; }}
+    .year-chart .bar-group:hover .bar, .year-chart .bar-group:focus .bar {{ fill: #1ed760; }}
+    .year-chart .bar-group:focus {{ outline: none; }}
+    .year-chart .bar-peak-label {{ fill: #ccc; font-size: 11px; font-weight: 600; text-anchor: middle; }}
+    .chart-tooltip {{ position: absolute; pointer-events: none; background: #0a0a0a;
+                       border: 1px solid #333; border-radius: 5px; padding: 0.35rem 0.6rem;
+                       font-size: 0.78rem; color: #eee; white-space: nowrap; opacity: 0;
+                       transform: translate(-50%, -100%); transition: opacity 0.1s; z-index: 10; }}
+    .chart-tooltip.visible {{ opacity: 1; }}
+    .chart-tooltip .tt-value {{ font-weight: 700; color: #fff; }}
+    .chart-tooltip .tt-label {{ color: #999; margin-left: 0.3rem; }}
   </style>
 </head>
 <body>
@@ -228,6 +360,14 @@ def export():
       <button type="button" class="apply-btn" onclick="applyWeights()">Apply</button>
       <button type="button" class="reset-btn" onclick="resetWeights()">Reset to defaults</button>
       <span class="weights-total">Total: <span class="value" id="weights-total">100</span>%</span>
+    </div>
+  </details>
+
+  <details class="chart-card">
+    <summary>Release year distribution</summary>
+    <p class="chart-subtitle">{len(df)} songs in the top {TOP_N} by release year{year_missing_note}</p>
+    <div class="year-chart-wrap">{year_chart_svg}
+      <div class="chart-tooltip" id="year-tooltip" role="tooltip"></div>
     </div>
   </details>
 
@@ -362,6 +502,38 @@ def export():
     // Native <button> headers handle Enter/Space activation for free.
     document.querySelectorAll("#table thead .sort-btn").forEach((btn, i) => {{
       btn.addEventListener("click", () => sortBy(i));
+    }});
+
+    // Year-histogram hover/focus tooltip. Same info is already in the SVG's
+    // aria-label and each bar's data-year/data-count, so the tooltip only
+    // ever repeats what's already reachable without a pointer.
+    const yearTooltip = document.getElementById("year-tooltip");
+    const yearChartWrap = document.querySelector(".year-chart-wrap");
+    function showYearTooltip(group) {{
+      const {{ year, count }} = group.dataset;
+      yearTooltip.innerHTML = "";
+      const value = document.createElement("span");
+      value.className = "tt-value";
+      value.textContent = count;
+      const label = document.createElement("span");
+      label.className = "tt-label";
+      label.textContent = count === "1" ? `song in ${{year}}` : `songs in ${{year}}`;
+      yearTooltip.appendChild(value);
+      yearTooltip.appendChild(label);
+      const wrapRect = yearChartWrap.getBoundingClientRect();
+      const hitRect = group.querySelector(".bar-hit").getBoundingClientRect();
+      yearTooltip.style.left = `${{hitRect.left - wrapRect.left + hitRect.width / 2}}px`;
+      yearTooltip.style.top = `${{hitRect.top - wrapRect.top - 6}}px`;
+      yearTooltip.classList.add("visible");
+    }}
+    function hideYearTooltip() {{
+      yearTooltip.classList.remove("visible");
+    }}
+    document.querySelectorAll(".year-chart .bar-group").forEach(group => {{
+      group.addEventListener("pointerenter", () => showYearTooltip(group));
+      group.addEventListener("pointerleave", hideYearTooltip);
+      group.addEventListener("focus", () => showYearTooltip(group));
+      group.addEventListener("blur", hideYearTooltip);
     }});
   </script>
 </body>
