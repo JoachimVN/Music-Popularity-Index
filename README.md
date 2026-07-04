@@ -1,4 +1,4 @@
-# Music Popularity Index
+<h1 align="center">Music Popularity Index</h1>
 
 A data pipeline that ranks songs by an era-normalized popularity score, combining
 **Billboard chart history** (Hot 100, Digital Song Sales, Radio Songs), **Spotify**
@@ -6,10 +6,24 @@ and **YouTube** all-time counts, **iTunes**/**Apple Music** chart points, and **
 Gold/Platinum/Diamond single certifications into one composite score. Built as the
 source of truth for a Name-That-Tune-style music quiz game.
 
-**Live:** [joavn.dev/mpi](https://joavn.dev/mpi)
+**Live:** [joavn.dev/MPI](https://joavn.dev/MPI)
 
 > **Work in progress.** The scoring model is still being tuned. Rankings,
 > weights, and the song pool will change. Don't treat the current numbers as final.
+
+## Screenshots
+
+<p align="center">
+    <img src="docs/screenshots/List.png" alt="MPI list sorted by popularity score"/>
+    <br>
+    <em>List sorted by popularity score</em>
+</p>
+
+<p align="center">
+    <img src="docs/screenshots/Weights_and_Graph.png" alt="Weights editor and year distribution graph"/>
+    <br>
+    <em>Customizable weights and year distribution graph</em>
+</p>
 
 ## What it does
 
