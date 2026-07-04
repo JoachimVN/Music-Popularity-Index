@@ -11,6 +11,20 @@ source of truth for a Name-That-Tune-style music quiz game.
 > **Work in progress.** The scoring model is still being tuned. Rankings,
 > weights, and the song pool will change. Don't treat the current numbers as final.
 
+## Screenshots
+
+<p align="center">
+    <img src="docs/screenshots/List.png" alt="MPI list sorted by popularity score"/>
+    <br>
+    <em>List sorted by popularity score</em>
+</p>
+
+<p align="center">
+    <img src="docs/screenshots/Weights_and_Graph.png" alt="Weights editor and year distribution graph"/>
+    <br>
+    <em>Customizable weights and year distribution graph</em>
+</p>
+
 ## What it does
 
 - Scrapes the Billboard Hot 100 (1958–present), kworb.net all-time Spotify/YouTube
