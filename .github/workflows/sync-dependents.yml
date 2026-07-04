@@ -4,7 +4,8 @@ name: Sync to dependent repos
 # tracked data/scores.csv + data/spotify_links.csv + data/album_art.csv (not
 # the raw scraped sources, which are gitignored and can take hours to
 # re-scrape), then publishes to repos that depend on it:
-#  - Portfolio (Vercel-deployed at joavn.dev): the built index page, served at joavn.dev/mpi.
+#  - Portfolio (Vercel-deployed at joavn.dev): the built index page, served at joavn.dev/mpi
+#    (physically stored under projects/mpi/ in that repo; the public URL is unchanged).
 #  - Versed: the full scored CSV, which its server reads as a data file.
 # Mirrors the same pattern CHORIDOR-web uses.
 # Requires repo secrets:
@@ -77,18 +78,18 @@ jobs:
           PORTFOLIO_TOKEN: ${{ secrets.PORTFOLIO_TOKEN }}
         run: git clone "https://x-access-token:${PORTFOLIO_TOKEN}@github.com/JoachimVN/Portfolio.git" portfolio
 
-      - name: Sync built pages -> mpi/
+      - name: Sync built pages -> projects/mpi/
         run: |
-          rm -rf portfolio/mpi
-          mkdir -p portfolio/mpi
-          cp output/index.html portfolio/mpi/index.html
+          rm -rf portfolio/projects/mpi
+          mkdir -p portfolio/projects/mpi
+          cp output/index.html portfolio/projects/mpi/index.html
 
       - name: Commit and push
         run: |
           cd portfolio
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add mpi/
+          git add projects/mpi/
           git diff --staged --quiet || git commit -m "chore: sync MPI from Music-Popularity-Index@${{ github.sha }}"
           git push
 
