@@ -246,8 +246,9 @@ def export():
 
     chart_scopes = sorted({100, 500, 1000, TOP_N})
     scope_options_html = "".join(
-        f'<li role="option" class="scope-option{" selected" if n == TOP_N else ""}" '
-        f"data-value=\"{n}\" onclick=\"selectScope({n}, '{_scope_label(n)}')\">{_scope_label(n)}</li>"
+        f'<button type="button" class="scope-option{" selected" if n == TOP_N else ""}" '
+        f'data-value="{n}" aria-current="{"true" if n == TOP_N else "false"}" '
+        f"onclick=\"selectScope({n}, '{_scope_label(n)}')\">{_scope_label(n)}</button>"
         for n in chart_scopes
     )
     updated = datetime.now(timezone.utc).strftime("%d %b %Y")
@@ -343,13 +344,16 @@ def export():
     .scope-dropdown-btn:focus {{ outline: none; border-color: #1db954; }}
     .scope-dropdown-arrow {{ color: #888; font-size: 0.7rem; }}
     .scope-dropdown-menu {{ position: absolute; top: calc(100% + 4px); left: 0; min-width: 100%;
+                             display: flex; flex-direction: column;
                              background: #1a1a1a; border: 1px solid #333; border-radius: 6px;
-                             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); list-style: none;
+                             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
                              margin: 0; padding: 0.3rem; z-index: 20; }}
     .scope-dropdown-menu[hidden] {{ display: none; }}
-    .scope-option {{ padding: 0.4rem 0.7rem; font-size: 0.85rem; color: #ccc; border-radius: 4px;
-                      cursor: pointer; white-space: nowrap; }}
+    .scope-option {{ display: block; width: 100%; background: none; border: none;
+                      text-align: left; font: inherit; padding: 0.4rem 0.7rem; font-size: 0.85rem;
+                      color: #ccc; border-radius: 4px; cursor: pointer; white-space: nowrap; }}
     .scope-option:hover {{ background: #262626; color: #fff; }}
+    .scope-option:focus {{ outline: none; background: #262626; color: #fff; }}
     .scope-option.selected {{ color: #1db954; }}
     .year-chart-wrap {{ position: relative; }}
     .year-chart {{ width: 100%; height: auto; display: block; overflow: visible; }}
@@ -397,11 +401,11 @@ def export():
       <span>Show top</span>
       <div class="scope-dropdown" id="year-chart-scope-dropdown">
         <button type="button" class="scope-dropdown-btn" id="year-chart-scope-btn"
-                aria-haspopup="listbox" aria-expanded="false" onclick="toggleScopeDropdown()">
+                aria-haspopup="true" aria-expanded="false" onclick="toggleScopeDropdown()">
           <span id="year-chart-scope-label">{_scope_label(TOP_N)}</span>
           <span class="scope-dropdown-arrow">▾</span>
         </button>
-        <ul class="scope-dropdown-menu" id="year-chart-scope-menu" role="listbox" hidden>{scope_options_html}</ul>
+        <div class="scope-dropdown-menu" id="year-chart-scope-menu" hidden>{scope_options_html}</div>
       </div>
       <span>songs by current weights</span>
     </div>
@@ -597,8 +601,10 @@ def export():
     function selectScope(value, label) {{
       yearChartScope = value;
       document.getElementById("year-chart-scope-label").textContent = label;
-      document.querySelectorAll("#year-chart-scope-menu .scope-option").forEach(li => {{
-        li.classList.toggle("selected", Number(li.dataset.value) === value);
+      document.querySelectorAll("#year-chart-scope-menu .scope-option").forEach(btn => {{
+        const isSelected = Number(btn.dataset.value) === value;
+        btn.classList.toggle("selected", isSelected);
+        btn.setAttribute("aria-current", String(isSelected));
       }});
       closeScopeDropdown();
       updateYearChart();
@@ -637,34 +643,27 @@ def export():
              `L${{(x + w).toFixed(2)}},${{(y + h).toFixed(2)}} Z`;
     }}
 
-    // counts: Map<year, count> — only years actually present in the current subset.
-    function renderYearChart(counts) {{
-      const svgEl = document.querySelector(".year-chart");
-      if (!svgEl || YEAR_MIN == null) return;
-
+    function yearFindPeak(counts) {{
       let peakYear = null, peakCount = 0;
       for (const [yr, c] of counts) {{
         if (c > peakCount) {{ peakCount = c; peakYear = yr; }}
       }}
+      return {{ peakYear, peakCount }};
+    }}
 
-      const allYears = [];
-      for (let y = YEAR_MIN; y <= YEAR_MAX; y++) allYears.push(y);
-      const plotW = YEAR_VIEW_W - YEAR_MARGIN.left - YEAR_MARGIN.right;
-      const plotH = YEAR_VIEW_H - YEAR_MARGIN.top - YEAR_MARGIN.bottom;
-      const slotW = plotW / allYears.length;
-      const step = yearNiceStep(Math.max(peakCount, 1));
-      const yMax = peakCount > 0 ? Math.ceil(peakCount / step) * step : step;
-
+    // Every 5th year gets an axis label, plus the first/last year — unless an
+    // edge year sits too close to its neighboring mod-5 label to avoid overlap.
+    function yearLabelSet(allYears, slotW) {{
       const minGapYears = Math.max(2, Math.ceil(20 / slotW));
       const labelYears = new Set(allYears.filter(y => y % 5 === 0));
-      for (const edge of [YEAR_MIN, YEAR_MAX]) {{
-        let farEnough = true;
-        for (const ly of labelYears) {{
-          if (Math.abs(edge - ly) < minGapYears) {{ farEnough = false; break; }}
-        }}
-        if (farEnough) labelYears.add(edge);
+      for (const edge of [allYears[0], allYears[allYears.length - 1]]) {{
+        const tooClose = [...labelYears].some(ly => Math.abs(edge - ly) < minGapYears);
+        if (!tooClose) labelYears.add(edge);
       }}
+      return labelYears;
+    }}
 
+    function yearGridlinesSvg(plotH, yMax, step) {{
       let svg = "";
       for (let i = 0; i <= yMax / step; i++) {{
         const val = i * step;
@@ -672,24 +671,50 @@ def export():
         svg += `<line class="grid" x1="${{YEAR_MARGIN.left}}" y1="${{gy.toFixed(2)}}" x2="${{YEAR_VIEW_W - YEAR_MARGIN.right}}" y2="${{gy.toFixed(2)}}"/>`;
         svg += `<text class="axis-y" x="${{YEAR_MARGIN.left - 6}}" y="${{gy.toFixed(2)}}" text-anchor="end" dominant-baseline="middle">${{val}}</text>`;
       }}
+      return svg;
+    }}
 
+    // Returns this bar's markup plus its geometry, so the caller can track
+    // the peak bar's position for the direct label without recomputing it.
+    function yearBarSvg(yr, i, counts, peakYear, slotW, plotH, yMax, labelYears) {{
+      const count = counts.get(yr) || 0;
+      const x = YEAR_MARGIN.left + i * slotW;
+      const barW = Math.max(slotW - 2, 1);
+      const h = yMax ? plotH * (count / yMax) : 0;
+      const y = YEAR_MARGIN.top + plotH - h;
+      const isPeak = yr === peakYear && count > 0;
+      let svg = `<g class="bar-group" tabindex="0" data-year="${{yr}}" data-count="${{count}}">` +
+                `<rect class="bar-hit" x="${{x.toFixed(2)}}" y="${{YEAR_MARGIN.top.toFixed(2)}}" width="${{barW.toFixed(2)}}" height="${{plotH.toFixed(2)}}"/>` +
+                `<path class="bar${{isPeak ? ' bar-peak' : ''}}" d="${{yearBarPath(x, y, barW, h)}}"/>` +
+                `</g>`;
+      if (labelYears.has(yr)) {{
+        const lx = x + barW / 2;
+        svg += `<text class="axis-x" x="${{lx.toFixed(2)}}" y="${{YEAR_VIEW_H - YEAR_MARGIN.bottom + 16}}" text-anchor="middle">${{yr}}</text>`;
+      }}
+      return {{ svg, x, barW, y, isPeak }};
+    }}
+
+    // counts: Map<year, count> — only years actually present in the current subset.
+    function renderYearChart(counts) {{
+      const svgEl = document.querySelector(".year-chart");
+      if (!svgEl || YEAR_MIN == null) return;
+
+      const {{ peakYear, peakCount }} = yearFindPeak(counts);
+      const allYears = [];
+      for (let y = YEAR_MIN; y <= YEAR_MAX; y++) allYears.push(y);
+      const plotW = YEAR_VIEW_W - YEAR_MARGIN.left - YEAR_MARGIN.right;
+      const plotH = YEAR_VIEW_H - YEAR_MARGIN.top - YEAR_MARGIN.bottom;
+      const slotW = plotW / allYears.length;
+      const step = yearNiceStep(Math.max(peakCount, 1));
+      const yMax = peakCount > 0 ? Math.ceil(peakCount / step) * step : step;
+      const labelYears = yearLabelSet(allYears, slotW);
+
+      let svg = yearGridlinesSvg(plotH, yMax, step);
       let peakX = 0, peakBarY = YEAR_MARGIN.top;
       allYears.forEach((yr, i) => {{
-        const count = counts.get(yr) || 0;
-        const x = YEAR_MARGIN.left + i * slotW;
-        const barW = Math.max(slotW - 2, 1);
-        const h = yMax ? plotH * (count / yMax) : 0;
-        const y = YEAR_MARGIN.top + plotH - h;
-        const isPeak = yr === peakYear && count > 0;
-        if (isPeak) {{ peakX = x + barW / 2; peakBarY = y; }}
-        svg += `<g class="bar-group" tabindex="0" data-year="${{yr}}" data-count="${{count}}">` +
-               `<rect class="bar-hit" x="${{x.toFixed(2)}}" y="${{YEAR_MARGIN.top.toFixed(2)}}" width="${{barW.toFixed(2)}}" height="${{plotH.toFixed(2)}}"/>` +
-               `<path class="bar${{isPeak ? ' bar-peak' : ''}}" d="${{yearBarPath(x, y, barW, h)}}"/>` +
-               `</g>`;
-        if (labelYears.has(yr)) {{
-          const lx = x + barW / 2;
-          svg += `<text class="axis-x" x="${{lx.toFixed(2)}}" y="${{YEAR_VIEW_H - YEAR_MARGIN.bottom + 16}}" text-anchor="middle">${{yr}}</text>`;
-        }}
+        const bar = yearBarSvg(yr, i, counts, peakYear, slotW, plotH, yMax, labelYears);
+        svg += bar.svg;
+        if (bar.isPeak) {{ peakX = bar.x + bar.barW / 2; peakBarY = bar.y; }}
       }});
       if (peakCount > 0) {{
         svg += `<text class="bar-peak-label" x="${{peakX.toFixed(2)}}" y="${{Math.max(peakBarY - 8, 10).toFixed(2)}}" text-anchor="middle">${{peakCount}}</text>`;
