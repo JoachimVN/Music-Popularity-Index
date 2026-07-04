@@ -247,7 +247,7 @@ def export():
     chart_scopes = sorted({100, 500, 1000, TOP_N})
     scope_options_html = "".join(
         f'<li role="option" class="scope-option{" selected" if n == TOP_N else ""}" '
-        f'data-value="{n}" onclick="selectScope({n}, {json.dumps(_scope_label(n))})">{_scope_label(n)}</li>'
+        f"data-value=\"{n}\" onclick=\"selectScope({n}, '{_scope_label(n)}')\">{_scope_label(n)}</li>"
         for n in chart_scopes
     )
     updated = datetime.now(timezone.utc).strftime("%d %b %Y")
