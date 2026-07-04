@@ -130,7 +130,7 @@ def _year_chart_html(df):
     years = df["year"].dropna().astype(int)
     missing = int(df["year"].isna().sum())
     if years.empty:
-        return "", missing
+        return "", missing, None, None
 
     counts = years.value_counts()
     y0, y1 = int(years.min()), int(years.max())
@@ -205,7 +205,7 @@ def _year_chart_html(df):
         {peak_label}
       </svg>"""
 
-    return svg, missing
+    return svg, missing, y0, y1
 
 
 def _weight_field_html(key):
@@ -235,11 +235,21 @@ def export():
 
     rows_html = "".join(_row_html(rank, row, links) for rank, row in df.iterrows())
     weight_rows_html = "".join(_weight_field_html(key) for key in DIM_COLS)
-    year_chart_svg, year_missing = _year_chart_html(df)
+    year_chart_svg, year_missing, year_min, year_max = _year_chart_html(df)
     year_missing_note = ""
     if year_missing:
         plural = "" if year_missing == 1 else "s"
         year_missing_note = f" · {year_missing} song{plural} missing a release year and excluded"
+
+    def _scope_label(n):
+        return f"All ({n})" if n == TOP_N else str(n)
+
+    chart_scopes = sorted({100, 500, 1000, TOP_N})
+    scope_options_html = "".join(
+        f'<li role="option" class="scope-option{" selected" if n == TOP_N else ""}" '
+        f'data-value="{n}" onclick="selectScope({n}, {json.dumps(_scope_label(n))})">{_scope_label(n)}</li>'
+        for n in chart_scopes
+    )
     updated = datetime.now(timezone.utc).strftime("%d %b %Y")
 
     html = f"""<!DOCTYPE html>
@@ -323,6 +333,24 @@ def export():
     .chart-card[open] summary::before {{ content: "▾ "; }}
     .chart-card summary:hover {{ color: #fff; }}
     .chart-subtitle {{ color: #777; font-size: 0.78rem; margin: 0.5rem 0 0.4rem; }}
+    .chart-controls {{ display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem;
+                        font-size: 0.82rem; color: #999; }}
+    .scope-dropdown {{ position: relative; display: inline-block; }}
+    .scope-dropdown-btn {{ display: flex; align-items: center; gap: 0.5rem; background: #1e1e1e;
+                            border: 1px solid #333; border-radius: 5px; color: #fff; font: inherit;
+                            font-size: 0.85rem; font-weight: 600; padding: 0.35rem 0.7rem; cursor: pointer; }}
+    .scope-dropdown-btn:hover {{ border-color: #444; }}
+    .scope-dropdown-btn:focus {{ outline: none; border-color: #1db954; }}
+    .scope-dropdown-arrow {{ color: #888; font-size: 0.7rem; }}
+    .scope-dropdown-menu {{ position: absolute; top: calc(100% + 4px); left: 0; min-width: 100%;
+                             background: #1a1a1a; border: 1px solid #333; border-radius: 6px;
+                             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); list-style: none;
+                             margin: 0; padding: 0.3rem; z-index: 20; }}
+    .scope-dropdown-menu[hidden] {{ display: none; }}
+    .scope-option {{ padding: 0.4rem 0.7rem; font-size: 0.85rem; color: #ccc; border-radius: 4px;
+                      cursor: pointer; white-space: nowrap; }}
+    .scope-option:hover {{ background: #262626; color: #fff; }}
+    .scope-option.selected {{ color: #1db954; }}
     .year-chart-wrap {{ position: relative; }}
     .year-chart {{ width: 100%; height: auto; display: block; overflow: visible; }}
     .year-chart .grid {{ stroke: #262626; stroke-width: 1; }}
@@ -365,7 +393,19 @@ def export():
 
   <details class="chart-card">
     <summary>Release year distribution</summary>
-    <p class="chart-subtitle">{len(df)} songs in the top {TOP_N} by release year{year_missing_note}</p>
+    <div class="chart-controls">
+      <span>Show top</span>
+      <div class="scope-dropdown" id="year-chart-scope-dropdown">
+        <button type="button" class="scope-dropdown-btn" id="year-chart-scope-btn"
+                aria-haspopup="listbox" aria-expanded="false" onclick="toggleScopeDropdown()">
+          <span id="year-chart-scope-label">{_scope_label(TOP_N)}</span>
+          <span class="scope-dropdown-arrow">▾</span>
+        </button>
+        <ul class="scope-dropdown-menu" id="year-chart-scope-menu" role="listbox" hidden>{scope_options_html}</ul>
+      </div>
+      <span>songs by current weights</span>
+    </div>
+    <p class="chart-subtitle" id="year-chart-subtitle">{len(df)} songs in the top {TOP_N} by release year{year_missing_note}</p>
     <div class="year-chart-wrap">{year_chart_svg}
       <div class="chart-tooltip" id="year-tooltip" role="tooltip"></div>
     </div>
@@ -443,6 +483,7 @@ def export():
     function applyWeights() {{
       updateTotal();
       recomputeAndRerank();
+      updateYearChart();
     }}
 
     function resetWeights() {{
@@ -529,12 +570,176 @@ def export():
     function hideYearTooltip() {{
       yearTooltip.classList.remove("visible");
     }}
-    document.querySelectorAll(".year-chart .bar-group").forEach(group => {{
-      group.addEventListener("pointerenter", () => showYearTooltip(group));
-      group.addEventListener("pointerleave", hideYearTooltip);
-      group.addEventListener("focus", () => showYearTooltip(group));
-      group.addEventListener("blur", hideYearTooltip);
+    function attachYearTooltipHandlers() {{
+      document.querySelectorAll(".year-chart .bar-group").forEach(group => {{
+        group.addEventListener("pointerenter", () => showYearTooltip(group));
+        group.addEventListener("pointerleave", hideYearTooltip);
+        group.addEventListener("focus", () => showYearTooltip(group));
+        group.addEventListener("blur", hideYearTooltip);
+      }});
+    }}
+
+    // A native <select>'s open dropdown list can't be themed to match the
+    // page (it renders in OS chrome), so the scope picker is a plain button
+    // + absolutely-positioned menu built from ordinary elements instead.
+    let yearChartScope = {TOP_N};
+    function toggleScopeDropdown() {{
+      const menu = document.getElementById("year-chart-scope-menu");
+      const btn = document.getElementById("year-chart-scope-btn");
+      const opening = menu.hidden;
+      menu.hidden = !opening;
+      btn.setAttribute("aria-expanded", String(opening));
+    }}
+    function closeScopeDropdown() {{
+      document.getElementById("year-chart-scope-menu").hidden = true;
+      document.getElementById("year-chart-scope-btn").setAttribute("aria-expanded", "false");
+    }}
+    function selectScope(value, label) {{
+      yearChartScope = value;
+      document.getElementById("year-chart-scope-label").textContent = label;
+      document.querySelectorAll("#year-chart-scope-menu .scope-option").forEach(li => {{
+        li.classList.toggle("selected", Number(li.dataset.value) === value);
+      }});
+      closeScopeDropdown();
+      updateYearChart();
+    }}
+    document.addEventListener("click", e => {{
+      const dropdown = document.getElementById("year-chart-scope-dropdown");
+      if (dropdown && !dropdown.contains(e.target)) closeScopeDropdown();
     }});
+    document.addEventListener("keydown", e => {{
+      if (e.key === "Escape") closeScopeDropdown();
+    }});
+
+    // Mirrors _bar_path()/_nice_step()/_year_chart_html() in export.py's Python
+    // (used only for the pre-JS initial render) — kept in sync by hand, same
+    // as computeScore() above. This JS copy is what actually redraws the chart
+    // whenever weights or the top-N scope change, since it needs the live,
+    // in-browser recomputed scores rather than the server's original ranking.
+    const YEAR_MIN = {json.dumps(year_min)};
+    const YEAR_MAX = {json.dumps(year_max)};
+    const YEAR_VIEW_W = 1000, YEAR_VIEW_H = 240;
+    const YEAR_MARGIN = {{ left: 34, right: 8, top: 16, bottom: 26 }};
+
+    function yearNiceStep(maxVal, targetLines = 4) {{
+      for (const step of [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000]) {{
+        if (maxVal / step <= targetLines) return step;
+      }}
+      return 5000;
+    }}
+
+    function yearBarPath(x, y, w, h) {{
+      const r = Math.min(4, h / 2, w / 2);
+      return `M${{x.toFixed(2)}},${{(y + h).toFixed(2)}} L${{x.toFixed(2)}},${{(y + r).toFixed(2)}} ` +
+             `Q${{x.toFixed(2)}},${{y.toFixed(2)}} ${{(x + r).toFixed(2)}},${{y.toFixed(2)}} ` +
+             `L${{(x + w - r).toFixed(2)}},${{y.toFixed(2)}} ` +
+             `Q${{(x + w).toFixed(2)}},${{y.toFixed(2)}} ${{(x + w).toFixed(2)}},${{(y + r).toFixed(2)}} ` +
+             `L${{(x + w).toFixed(2)}},${{(y + h).toFixed(2)}} Z`;
+    }}
+
+    // counts: Map<year, count> — only years actually present in the current subset.
+    function renderYearChart(counts) {{
+      const svgEl = document.querySelector(".year-chart");
+      if (!svgEl || YEAR_MIN == null) return;
+
+      let peakYear = null, peakCount = 0;
+      for (const [yr, c] of counts) {{
+        if (c > peakCount) {{ peakCount = c; peakYear = yr; }}
+      }}
+
+      const allYears = [];
+      for (let y = YEAR_MIN; y <= YEAR_MAX; y++) allYears.push(y);
+      const plotW = YEAR_VIEW_W - YEAR_MARGIN.left - YEAR_MARGIN.right;
+      const plotH = YEAR_VIEW_H - YEAR_MARGIN.top - YEAR_MARGIN.bottom;
+      const slotW = plotW / allYears.length;
+      const step = yearNiceStep(Math.max(peakCount, 1));
+      const yMax = peakCount > 0 ? Math.ceil(peakCount / step) * step : step;
+
+      const minGapYears = Math.max(2, Math.ceil(20 / slotW));
+      const labelYears = new Set(allYears.filter(y => y % 5 === 0));
+      for (const edge of [YEAR_MIN, YEAR_MAX]) {{
+        let farEnough = true;
+        for (const ly of labelYears) {{
+          if (Math.abs(edge - ly) < minGapYears) {{ farEnough = false; break; }}
+        }}
+        if (farEnough) labelYears.add(edge);
+      }}
+
+      let svg = "";
+      for (let i = 0; i <= yMax / step; i++) {{
+        const val = i * step;
+        const gy = YEAR_MARGIN.top + plotH * (1 - val / yMax);
+        svg += `<line class="grid" x1="${{YEAR_MARGIN.left}}" y1="${{gy.toFixed(2)}}" x2="${{YEAR_VIEW_W - YEAR_MARGIN.right}}" y2="${{gy.toFixed(2)}}"/>`;
+        svg += `<text class="axis-y" x="${{YEAR_MARGIN.left - 6}}" y="${{gy.toFixed(2)}}" text-anchor="end" dominant-baseline="middle">${{val}}</text>`;
+      }}
+
+      let peakX = 0, peakBarY = YEAR_MARGIN.top;
+      allYears.forEach((yr, i) => {{
+        const count = counts.get(yr) || 0;
+        const x = YEAR_MARGIN.left + i * slotW;
+        const barW = Math.max(slotW - 2, 1);
+        const h = yMax ? plotH * (count / yMax) : 0;
+        const y = YEAR_MARGIN.top + plotH - h;
+        const isPeak = yr === peakYear && count > 0;
+        if (isPeak) {{ peakX = x + barW / 2; peakBarY = y; }}
+        svg += `<g class="bar-group" tabindex="0" data-year="${{yr}}" data-count="${{count}}">` +
+               `<rect class="bar-hit" x="${{x.toFixed(2)}}" y="${{YEAR_MARGIN.top.toFixed(2)}}" width="${{barW.toFixed(2)}}" height="${{plotH.toFixed(2)}}"/>` +
+               `<path class="bar${{isPeak ? ' bar-peak' : ''}}" d="${{yearBarPath(x, y, barW, h)}}"/>` +
+               `</g>`;
+        if (labelYears.has(yr)) {{
+          const lx = x + barW / 2;
+          svg += `<text class="axis-x" x="${{lx.toFixed(2)}}" y="${{YEAR_VIEW_H - YEAR_MARGIN.bottom + 16}}" text-anchor="middle">${{yr}}</text>`;
+        }}
+      }});
+      if (peakCount > 0) {{
+        svg += `<text class="bar-peak-label" x="${{peakX.toFixed(2)}}" y="${{Math.max(peakBarY - 8, 10).toFixed(2)}}" text-anchor="middle">${{peakCount}}</text>`;
+      }}
+
+      svgEl.setAttribute(
+        "aria-label",
+        `Number of songs by release year, ${{YEAR_MIN}}–${{YEAR_MAX}}, peaking at ${{peakCount}} in ${{peakYear}}`
+      );
+      svgEl.innerHTML = svg;
+      attachYearTooltipHandlers();
+    }}
+
+    // Recomputes each song's score under the current weights, takes the top-N
+    // per the scope dropdown, and redraws the histogram over just that subset —
+    // this is what makes the chart shift as weights shift, since the same
+    // {TOP_N}-song pool re-ranks differently but only a re-ranked *slice* of it
+    // changes composition (see the scope control's hint text).
+    function updateYearChart() {{
+      if (YEAR_MIN == null) return;
+      const scope = yearChartScope;
+      const weights = currentWeights();
+      const tbody = document.getElementById("table").tBodies[0];
+      const rows = Array.from(tbody.rows);
+
+      const scored = rows.map(row => {{
+        const dims = JSON.parse(row.dataset.dims);
+        return {{ year: dims.year, score: computeScore(dims, weights) }};
+      }});
+      scored.sort((a, b) => b.score - a.score);
+      const top = scope >= scored.length ? scored : scored.slice(0, scope);
+
+      const counts = new Map();
+      let missing = 0;
+      for (const s of top) {{
+        if (s.year == null) {{ missing++; continue; }}
+        counts.set(s.year, (counts.get(s.year) || 0) + 1);
+      }}
+      const included = top.length - missing;
+
+      const subtitle = document.getElementById("year-chart-subtitle");
+      const scopeLabel = Math.min(scope, scored.length);
+      let text = `${{included}} songs in top ${{scopeLabel}} by current weights, by release year`;
+      if (missing) text += ` · ${{missing}} missing a release year and excluded`;
+      subtitle.textContent = text;
+
+      renderYearChart(counts);
+    }}
+
+    attachYearTooltipHandlers();
   </script>
 </body>
 </html>"""
