@@ -251,6 +251,12 @@ def export():
         f"onclick=\"selectScope({n}, '{_scope_label(n)}')\">{_scope_label(n)}</button>"
         for n in chart_scopes
     )
+    decades = sorted({(int(year) // 10) * 10 for year in df["year"].dropna()})
+    decade_options_html = '<button type="button" class="scope-option selected" data-value="" aria-current="true" onclick="selectDecade(null, \'All decades\')">All decades</button>' + "".join(
+        f'<button type="button" class="scope-option" data-value="{decade}" aria-current="false" '
+        f"onclick=\"selectDecade({decade}, '{decade}s')\">{decade}s</button>"
+        for decade in decades
+    )
     updated = datetime.now(timezone.utc).strftime("%d %b %Y")
 
     html = f"""<!DOCTYPE html>
@@ -340,8 +346,9 @@ def export():
     .chart-card[open] summary::before {{ content: "▾ "; }}
     .chart-card summary:hover {{ color: #fff; }}
     .chart-subtitle {{ color: #777; font-size: 0.78rem; margin: 0.5rem 0 0.4rem; }}
-    .chart-controls {{ display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem;
+    .chart-controls {{ display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.6rem;
                         font-size: 0.82rem; color: #999; }}
+    .chart-control-divider {{ color: #444; margin: 0 0.15rem; }}
     .scope-dropdown {{ position: relative; display: inline-block; }}
     .scope-dropdown-btn {{ display: flex; align-items: center; gap: 0.5rem; background: #1e1e1e;
                             border: 1px solid #333; border-radius: 5px; color: #fff; font: inherit;
@@ -414,6 +421,16 @@ def export():
         <div class="scope-dropdown-menu" id="year-chart-scope-menu" hidden>{scope_options_html}</div>
       </div>
       <span>songs by current weights</span>
+      <span class="chart-control-divider" aria-hidden="true">·</span>
+      <span>Decade</span>
+      <div class="scope-dropdown" id="tracklist-decade-dropdown">
+        <button type="button" class="scope-dropdown-btn" id="tracklist-decade-btn"
+                aria-haspopup="true" aria-expanded="false" onclick="toggleDecadeDropdown()">
+          <span id="tracklist-decade-label">All decades</span>
+          <span class="scope-dropdown-arrow">▾</span>
+        </button>
+        <div class="scope-dropdown-menu" id="tracklist-decade-menu" hidden>{decade_options_html}</div>
+      </div>
     </div>
     <p class="chart-subtitle" id="year-chart-subtitle">{len(df)} songs in the top {TOP_N} by release year{year_missing_note}</p>
     <div class="year-chart-wrap">{year_chart_svg}
@@ -495,6 +512,7 @@ def export():
     function applyWeights() {{
       updateTotal();
       recomputeAndRerank();
+      applyTracklistFilters();
       updateYearChart();
     }}
 
@@ -595,6 +613,7 @@ def export():
     // page (it renders in OS chrome), so the scope picker is a plain button
     // + absolutely-positioned menu built from ordinary elements instead.
     let yearChartScope = {TOP_N};
+    let tracklistDecade = null;
     function toggleScopeDropdown() {{
       const menu = document.getElementById("year-chart-scope-menu");
       const btn = document.getElementById("year-chart-scope-btn");
@@ -606,6 +625,27 @@ def export():
       document.getElementById("year-chart-scope-menu").hidden = true;
       document.getElementById("year-chart-scope-btn").setAttribute("aria-expanded", "false");
     }}
+    // Both controls operate on the same ranked subset: first take the top-N
+    // under the current weights, then optionally narrow that subset to a decade.
+    function currentTopTracks() {{
+      const weights = currentWeights();
+      const rows = Array.from(document.getElementById("table").tBodies[0].rows);
+      const scored = rows.map(row => {{
+        const dims = JSON.parse(row.dataset.dims);
+        return {{ row, year: dims.year, score: computeScore(dims, weights) }};
+      }});
+      scored.sort((a, b) => b.score - a.score);
+      return yearChartScope >= scored.length ? scored : scored.slice(0, yearChartScope);
+    }}
+    function applyTracklistFilters() {{
+      const visibleRows = new Set(currentTopTracks()
+        .filter(track => tracklistDecade == null ||
+          (track.year != null && Math.floor(track.year / 10) * 10 === tracklistDecade))
+        .map(track => track.row));
+      Array.from(document.getElementById("table").tBodies[0].rows).forEach(row => {{
+        row.hidden = !visibleRows.has(row);
+      }});
+    }}
     function selectScope(value, label) {{
       yearChartScope = value;
       document.getElementById("year-chart-scope-label").textContent = label;
@@ -615,14 +655,46 @@ def export():
         btn.setAttribute("aria-current", String(isSelected));
       }});
       closeScopeDropdown();
+      applyTracklistFilters();
+      updateYearChart();
+    }}
+
+    // The decade picker lives beside the release-year chart because that is
+    // where the list's time coverage is easiest to understand.
+    function toggleDecadeDropdown() {{
+      const menu = document.getElementById("tracklist-decade-menu");
+      const btn = document.getElementById("tracklist-decade-btn");
+      const opening = menu.hidden;
+      menu.hidden = !opening;
+      btn.setAttribute("aria-expanded", String(opening));
+    }}
+    function closeDecadeDropdown() {{
+      document.getElementById("tracklist-decade-menu").hidden = true;
+      document.getElementById("tracklist-decade-btn").setAttribute("aria-expanded", "false");
+    }}
+    function selectDecade(value, label) {{
+      tracklistDecade = value;
+      document.getElementById("tracklist-decade-label").textContent = label;
+      document.querySelectorAll("#tracklist-decade-menu .scope-option").forEach(btn => {{
+        const isSelected = btn.dataset.value === (value == null ? "" : String(value));
+        btn.classList.toggle("selected", isSelected);
+        btn.setAttribute("aria-current", String(isSelected));
+      }});
+      closeDecadeDropdown();
+      applyTracklistFilters();
       updateYearChart();
     }}
     document.addEventListener("click", e => {{
-      const dropdown = document.getElementById("year-chart-scope-dropdown");
-      if (dropdown && !dropdown.contains(e.target)) closeScopeDropdown();
+      const scopeDropdown = document.getElementById("year-chart-scope-dropdown");
+      if (scopeDropdown && !scopeDropdown.contains(e.target)) closeScopeDropdown();
+      const decadeDropdown = document.getElementById("tracklist-decade-dropdown");
+      if (decadeDropdown && !decadeDropdown.contains(e.target)) closeDecadeDropdown();
     }});
     document.addEventListener("keydown", e => {{
-      if (e.key === "Escape") closeScopeDropdown();
+      if (e.key === "Escape") {{
+        closeScopeDropdown();
+        closeDecadeDropdown();
+      }}
     }});
 
     // Mirrors _bar_path()/_nice_step()/_year_chart_html() in export.py's Python
@@ -740,36 +812,25 @@ def export():
       attachYearTooltipHandlers();
     }}
 
-    // Recomputes each song's score under the current weights, takes the top-N
-    // per the scope dropdown, and redraws the histogram over just that subset —
-    // this is what makes the chart shift as weights shift, since the same
-    // {TOP_N}-song pool re-ranks differently but only a re-ranked *slice* of it
-    // changes composition (see the scope control's hint text).
+    // Redraws the histogram from exactly the same top-N and decade-filtered
+    // subset shown in the tracklist.
     function updateYearChart() {{
       if (YEAR_MIN == null) return;
-      const scope = yearChartScope;
-      const weights = currentWeights();
-      const tbody = document.getElementById("table").tBodies[0];
-      const rows = Array.from(tbody.rows);
-
-      const scored = rows.map(row => {{
-        const dims = JSON.parse(row.dataset.dims);
-        return {{ year: dims.year, score: computeScore(dims, weights) }};
-      }});
-      scored.sort((a, b) => b.score - a.score);
-      const top = scope >= scored.length ? scored : scored.slice(0, scope);
+      const top = currentTopTracks();
+      const displayed = tracklistDecade == null ? top : top.filter(track =>
+        track.year != null && Math.floor(track.year / 10) * 10 === tracklistDecade);
 
       const counts = new Map();
       let missing = 0;
-      for (const s of top) {{
+      for (const s of displayed) {{
         if (s.year == null) {{ missing++; continue; }}
         counts.set(s.year, (counts.get(s.year) || 0) + 1);
       }}
-      const included = top.length - missing;
+      const included = displayed.length - missing;
 
       const subtitle = document.getElementById("year-chart-subtitle");
-      const scopeLabel = Math.min(scope, scored.length);
-      let text = `${{included}} songs in top ${{scopeLabel}} by current weights, by release year`;
+      let text = `${{included}} songs in top ${{top.length}} by current weights, by release year`;
+      if (tracklistDecade != null) text += ` · filtered to ${{tracklistDecade}}s`;
       if (missing) text += ` · ${{missing}} missing a release year and excluded`;
       subtitle.textContent = text;
 
