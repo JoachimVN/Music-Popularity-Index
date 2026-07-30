@@ -13,13 +13,14 @@ from src.utils import artist_html
 
 BASE   = os.path.dirname(__file__)
 SCORES = os.path.join(BASE, "../data/scores.csv")
+WEEKS_CHARTED_LABEL = "Weeks Charted"
 
 PLATFORMS = [
     {
         "name":      "Billboard Hot 100",
         "raw_col":   "bb_chart_weeks",
         "score_col": "bb_score",
-        "label":     "Weeks Charted",
+        "label":     WEEKS_CHARTED_LABEL,
         "coverage":  "Billboard Hot 100 chart, since 1958",
         "color":     "#e0e0e0",
         "output":    os.path.join(BASE, "../output/billboard.html"),
@@ -64,7 +65,7 @@ PLATFORMS = [
         "name":      "Digital Sales",
         "raw_col":   "sales_chart_weeks",
         "score_col": "sales_score",
-        "label":     "Weeks Charted",
+        "label":     WEEKS_CHARTED_LABEL,
         "coverage":  "Billboard Digital Song Sales chart, since Oct 2004",
         "color":     "#ffd60a",
         "output":    os.path.join(BASE, "../output/sales.html"),
@@ -90,7 +91,7 @@ PLATFORMS = [
         "name":      "Radio Airplay",
         "raw_col":   "radio_chart_weeks",
         "score_col": "radio_score",
-        "label":     "Weeks Charted",
+        "label":     WEEKS_CHARTED_LABEL,
         "coverage":  "Billboard Radio Songs chart, since Oct 1990",
         "color":     "#4ea8de",
         "output":    os.path.join(BASE, "../output/radio_airplay.html"),
@@ -190,12 +191,16 @@ def export_platform(df, p):
       rows.sort((a, b) => {{
         const av = a.cells[col].textContent.replace(/[^0-9.]/g, "") || a.cells[col].textContent;
         const bv = b.cells[col].textContent.replace(/[^0-9.]/g, "") || b.cells[col].textContent;
-        const an = parseFloat(av), bn = parseFloat(bv);
-        return (!isNaN(an) && !isNaN(bn) ? an - bn : av.localeCompare(bv)) * sortDir;
+        const an = Number.parseFloat(av);
+        const bn = Number.parseFloat(bv);
+        if (!Number.isNaN(an) && !Number.isNaN(bn)) return (an - bn) * sortDir;
+        return av.localeCompare(bv) * sortDir;
       }});
       rows.forEach(r => tbody.appendChild(r));
       document.querySelectorAll("#table thead .sort-btn").forEach((btn, i) => {{
-        btn.className = "sort-btn" + (i === col ? (sortDir === 1 ? " sorted-asc" : " sorted-desc") : "");
+        let sortClass = "";
+        if (i === col) sortClass = sortDir === 1 ? " sorted-asc" : " sorted-desc";
+        btn.className = "sort-btn" + sortClass;
       }});
     }}
     document.querySelectorAll("#table thead .sort-btn").forEach((btn, i) => {{
