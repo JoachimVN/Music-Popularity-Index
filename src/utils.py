@@ -10,21 +10,125 @@ def _strip_quotes(s):
     return str(s).strip().strip(_QUOTE_CHARS).strip()
 
 
-# Band names that contain "/" but are a single act, not a multi-artist credit
-# (kworb/Billboard write these with no surrounding spaces, indistinguishable by
-# regex from a genuine multi-artist credit like "John Lennon/Plastic Ono Band").
-_ATOMIC_ACTS = ["AC/DC", "HUNTR/X"]
-_SLASH_PLACEHOLDER = "⁄"  # fraction slash: stands in for "/" inside atomic acts during splitting
+# Artist names that contain a separator used by multi-artist credits. These need
+# an explicit list: punctuation alone cannot distinguish a band such as "Nico &
+# Vinz" from a genuine collaboration such as "Lady Gaga & Bruno Mars".
+_ATOMIC_ACTS = [
+    "AC/DC",
+    "HUNTR/X",
+    "Nico & Vinz",
+    "Earth, Wind & Fire",
+    "Tyler, The Creator",
+    "Lil Nas X",
+    "Silk Sonic (Bruno Mars & Anderson .Paak)",
+    "The Mamas & The Papas",
+    "Dan + Shay",
+    "Sly & The Family Stone",
+    "C+C Music Factory",
+    "Kool & The Gang",
+    "Simon & Garfunkel",
+    "Mumford & Sons",
+    "Florence + The Machine",
+    "Captain & Tennille",
+    "The Captain & Tennille",
+    "D.J. Jazzy Jeff & The Fresh Prince",
+    "Lipps, Inc.",
+    "Sonny & Cher",
+    "Peaches & Herb",
+    "Sam & Dave",
+    "England Dan & John Ford Coley",
+    "Booker T. & The MG's",
+    "Michael Franti & Spearhead",
+    "K-Ci & JoJo",
+    # Additional high-confidence group and duo names found in the full export.
+    "10,000 Maniacs",
+    "Alex & Sierra",
+    "Alina Baraz & Galimatias",
+    "Aly & AJ",
+    "Angels & Airwaves",
+    "Angus & Julia Stone",
+    "Artists Of Then, Now & Forever",
+    "Ashford & Simpson",
+    "Ashton, Gardner & Dyke",
+    "Ayo & Teo",
+    "Big & Rich",
+    "Blood, Sweat & Tears",
+    "Booker T. & The M.G.'s",
+    "Crosby, Stills & Nash",
+    "Crosby, Stills, Nash & Young",
+    "Dave Dee, Dozy, Beaky, Mick And Tich",
+    "Dino, Desi & Billy",
+    "Emerson, Lake & Palmer",
+    "Emerson, Lake & Powell",
+    "for KING & COUNTRY",
+    "Hagar, Schon, Aaronson, Shrieve",
+    "Hamilton, Joe Frank & Dennison",
+    "Hamilton, Joe Frank & Reynolds",
+    "Hodges, James And Smith",
+    "Hootie & The Blowfish",
+    "Isley, Jasper, Isley",
+    "Macklemore & Ryan Lewis",
+    "McGuinn, Clark & Hillman",
+    "Of Monsters & Men",
+    "Peter, Paul & Mary",
+    "Ray Parker Jr. & Raydio",
+    "Ray, Goodman & Brown",
+    "Rene & Rene",
+    "RKM & Ken-Y",
+    "Rob Base & D.J. E-Z Rock",
+    "Rodney O & Joe Cooley",
+    "Seals & Crofts",
+    "She & Him",
+    "Shirley & Lee",
+    "Siouxsie & The Banshees",
+    "SOB X RBE",
+    "Tanto Metro & Devonte",
+    "The Lewis & Clarke Expedition",
+    "The Naked & Famous",
+    "The Souther, Hillman, Furay Band",
+    "The Swell Season (Glen Hansard & Marketa Irglova)",
+    "Tom Petty & The Heartbreakers",
+    "Tommy Boyce & Bobby Hart",
+    "Tommy James & The Shondells",
+    "TOMORROW X TOGETHER",
+    "Tony Orlando & Dawn",
+    "Vigrass & Osborne",
+    "Vremya & Steklo",
+    "Wisin & Yandel",
+    "Yandar & Yostin",
+    "Yarbrough & Peoples",
+    "Young T & Bugsey",
+    "Zager & Evans",
+    "Zion & Lennox",
+    "Zé Neto & Cristiano",
+]
+_SEPARATOR_PLACEHOLDERS = {
+    "/": "⁄",
+    "&": "﹠",
+    ",": "﹐",
+    "+": "﹢",
+    "x": "ｘ",
+    "X": "Ｘ",
+}
 
 
 def _protect_atomic_acts(s):
     for act in _ATOMIC_ACTS:
-        s = re.sub(re.escape(act), lambda m: m.group(0).replace("/", _SLASH_PLACEHOLDER), s, flags=re.IGNORECASE)
+        s = re.sub(
+            re.escape(act),
+            lambda m: m.group(0).translate(str.maketrans(_SEPARATOR_PLACEHOLDERS)),
+            s,
+            flags=re.IGNORECASE,
+        )
     return s
 
 
+def _restore_atomic_separators(s):
+    return s.translate(str.maketrans({value: key for key, value in _SEPARATOR_PLACEHOLDERS.items()}))
+
+
 _ALL_SPLIT_RE = re.compile(
-    r'\s*,\s*'                              # comma
+    r'\s*,(?!\s*(?:Jr\.?|Sr\.?|I{1,4}|V)\b)\s*'  # comma, except name suffixes
     r'|\s*&\s*'                             # ampersand
     r'|\s*\+\s*'                            # plus, e.g. "Jay-Z + Alicia Keys"
     r'|\s*/\s*'                             # slash (atomic acts protected above)
@@ -60,7 +164,7 @@ def split_all_artists(artist):
     ["Anuel AA", "Daddy Yankee", "Karol G", "Ozuna", "J Balvin"].
     """
     s = _protect_atomic_acts(_strip_quotes(artist))
-    parts = [_strip_quotes(p).replace(_SLASH_PLACEHOLDER, "/") for p in _ALL_SPLIT_RE.split(s)]
+    parts = [_restore_atomic_separators(_strip_quotes(p)) for p in _ALL_SPLIT_RE.split(s)]
     return [p for p in parts if p]
 
 
