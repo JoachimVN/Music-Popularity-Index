@@ -1,7 +1,7 @@
-spotipy
-billboard.py
-pandas
-requests
-python-dotenv
-beautifulsoup4
-lxml
+spotipy==2.26.0
+billboard.py==7.1.0
+pandas==3.0.5
+requests==2.34.2
+python-dotenv==1.2.2
+beautifulsoup4==4.15.0
+lxml==6.1.1
