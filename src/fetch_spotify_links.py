@@ -100,6 +100,29 @@ def _load_exportify_file(path):
         return None
 
 
+def _artist_names(raw):
+    """Exportify joins multi-artist credits with ';' — split back into normalized names."""
+    return [n for n in (_nd(a) for a in re.split(r"[;]", str(raw))) if n]
+
+
+def _candidate_score(scored_artist_raw, candidate_artist_raw):
+    """How well a candidate's artist credits match the scored song's full artist string.
+
+    Returns (matched, -extra): candidates naming more of the scored song's
+    credited artists rank higher; among those, candidates that *also* name
+    artists absent from the scored credit (e.g. a remixer) rank lower. This
+    lets a remix win when it's the actually-credited version (e.g. Despacito
+    ft. Justin Bieber) while losing to the plain original when the remixer
+    isn't part of the scored credit (e.g. a Seeb/Summer Walker remix)."""
+    scored_norm = _nd(scored_artist_raw)
+    names = _artist_names(candidate_artist_raw)
+    matched = sum(
+        1 for n in names
+        if re.search(r"(?<!\w)" + re.escape(n) + r"(?!\w)", scored_norm)
+    )
+    return (matched, -(len(names) - matched))
+
+
 def _build_lookup():
     paths = sorted(glob.glob(os.path.join(DATA_DIR, "*.csv")))
     frames = [f for f in (_load_exportify_file(p) for p in paths) if f is not None]
@@ -128,20 +151,35 @@ def _build_lookup():
     combined["kp"] = combined["artist"].map(_primary)
     print(f"  Loaded {len(combined):,} tracks from {len(frames)} CSV file(s)", flush=True)
 
-    meta_cols = ["url", "duration_ms", "release_year", "tempo"]
-    by_both = combined.drop_duplicates(subset=["kt", "kp"]).set_index(["kt", "kp"])[meta_cols]
+    meta_cols = ["title", "artist", "url", "duration_ms", "release_year", "tempo"]
+
+    # Titles that differ only by a stripped " - Remix"/" - Remaster"/etc.
+    # suffix (see _nd) collapse onto the same (kt, kp) key. Keep every
+    # distinct-titled candidate rather than picking one at build time — the
+    # final pick needs the scored song's full artist credit, which isn't
+    # known until fetch_all() looks it up.
+    by_both = {
+        key: grp[meta_cols].to_dict("records")
+        for key, grp in combined.drop_duplicates(subset=["kt", "kp", "title"]).groupby(["kt", "kp"])
+    }
 
     # Title-only fallback: only keep titles where every row shares the same
     # primary artist, so we never guess between two different songs that
     # happen to share a title (e.g. "Golden" by Harry Styles vs. HUNTR/X).
     unambiguous_titles = combined.groupby("kt")["kp"].nunique()
     unambiguous_titles = unambiguous_titles[unambiguous_titles == 1].index
-    by_title = (
-        combined[combined["kt"].isin(unambiguous_titles)]
-        .drop_duplicates(subset=["kt"])
-        .set_index("kt")[meta_cols]
-    )
+    title_candidates = combined[combined["kt"].isin(unambiguous_titles)].drop_duplicates(subset=["kt", "title"])
+    by_title = {
+        kt: grp[meta_cols].to_dict("records")
+        for kt, grp in title_candidates.groupby("kt")
+    }
     return by_both, by_title
+
+
+def _pick(scored_artist_raw, candidates):
+    if len(candidates) == 1:
+        return candidates[0]
+    return max(candidates, key=lambda c: _candidate_score(scored_artist_raw, c["artist"]))
 
 
 def fetch_all():
@@ -160,10 +198,10 @@ def fetch_all():
     for _, row in scores.iterrows():
         kt = _nd(row["title"])
         kp = _primary(row["artist"])
-        if (kt, kp) in by_both.index:
-            match = by_both.loc[(kt, kp)]
-        elif kt in by_title.index:
-            match = by_title.loc[kt]
+        if (kt, kp) in by_both:
+            match = _pick(row["artist"], by_both[(kt, kp)])
+        elif kt in by_title:
+            match = _pick(row["artist"], by_title[kt])
         else:
             match = None
 
