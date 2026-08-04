@@ -102,7 +102,7 @@ def _load_exportify_file(path):
 
 def _artist_names(raw):
     """Exportify joins multi-artist credits with ';' — split back into normalized names."""
-    return [n for n in (_nd(a) for a in re.split(r"[;]", str(raw))) if n]
+    return [n for n in (_nd(a) for a in re.split(r";", str(raw))) if n]
 
 
 def _candidate_score(scored_artist_raw, candidate_artist_raw):
