@@ -4,7 +4,7 @@ A data pipeline that ranks songs by an era-normalized popularity score, combinin
 **Billboard chart history** (Hot 100, Digital Song Sales, Radio Songs), **Spotify**
 and **YouTube** all-time counts, **iTunes**/**Apple Music** chart points, and **RIAA**
 Gold/Platinum/Diamond single certifications into one composite score. Built as the
-source of truth for a Name-That-Tune-style music quiz game.
+source of truth for [Versed](https://github.com/JoachimVN/Versed).
 
 **Live:** [joavn.dev/MPI](https://joavn.dev/MPI)
 
