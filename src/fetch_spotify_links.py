@@ -105,6 +105,35 @@ def _artist_names(raw):
     return [n for n in (_nd(a) for a in re.split(r";", str(raw))) if n]
 
 
+# Catalog metadata for a remix often credits only the original artist
+# (Spotify rarely lists a remixer as a separate artist credit), so
+# _candidate_score alone can't tell a remix apart from the original when
+# both share the scored song's exact artist credit (e.g. Billboard's
+# "Lana Del Rey vs. Cedric Gervais" charting entry for "Summertime Sadness"
+# still normalizes to just "Lana Del Rey" on both the remix and the
+# original candidate). Use the raw title as a tiebreaker in that case,
+# preferring whichever candidate's title doesn't carry a remix-style
+# qualifier — i.e. the plain original.
+#
+# Deliberately narrow: "edit"/"mix"/"version"/"extended" are excluded even
+# though they sound similar, because a "Radio Edit"/"Single Mix"/"7\" Edit"
+# is routinely the actual charting single (e.g. Daft Punk's "Get Lucky" hit
+# single *is* the "(Radio Edit)" credit; The Black Eyed Peas' "Let's Get It
+# Started" hit single *is* the "Spike Mix") — demoting those caused
+# regressions in testing. Only keywords that mark a fundamentally different
+# rendition (someone else's remix, a stripped-down instrumental/acoustic/live
+# cut, a modern sped-up/slowed edit) are safe to demote unconditionally.
+_ALT_VERSION_RE = re.compile(
+    r"\b(remix|rmx|mashup|bootleg|rework|vip|instrumental|acoustic|"
+    r"live|sped up|slowed|karaoke)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_plain_title(raw_title):
+    return not _ALT_VERSION_RE.search(str(raw_title))
+
+
 def _candidate_score(scored_artist_raw, candidate_artist_raw):
     """How well a candidate's artist credits match the scored song's full artist string.
 
@@ -179,7 +208,10 @@ def _build_lookup():
 def _pick(scored_artist_raw, candidates):
     if len(candidates) == 1:
         return candidates[0]
-    return max(candidates, key=lambda c: _candidate_score(scored_artist_raw, c["artist"]))
+    return max(
+        candidates,
+        key=lambda c: _candidate_score(scored_artist_raw, c["artist"]) + (_is_plain_title(c["title"]),),
+    )
 
 
 def fetch_all():

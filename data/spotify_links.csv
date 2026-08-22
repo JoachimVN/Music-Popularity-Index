@@ -283,7 +283,7 @@ Safe And Sound,Capital Cities,https://open.spotify.com/track/6Z8R6UsFuGXGtiIxiD8
 Get Lucky,Daft Punk Featuring Pharrell Williams,https://open.spotify.com/track/2Foc5Q5nqNiosCNqttzHof,247632,2013.0,116.047
 Wannabe,Spice Girls,https://open.spotify.com/track/1Je1IMUlBXcx1Fz0WE7oPT,173026,1996.0,110.009
 Die With A Smile,Lady Gaga & Bruno Mars,https://open.spotify.com/track/2plbrEY59IikOBgBGLjaoe,251667,2024.0,157.969
-Summertime Sadness,Lana Del Rey vs. Cedric Gervais,https://open.spotify.com/track/3AeSHdDrSkDpW6o6JaUo9S,214912,2013.0,126.045
+Summertime Sadness,Lana Del Rey,https://open.spotify.com/track/1Ist6PR2BZR3n2z2Y5R6S1,264773,2012.0,111.96
 Eastside,"""Benny Blanco, Halsey & Khalid""",https://open.spotify.com/track/7FGq80cy8juXBCD2nrqdWU,170769,2018.0,89.949
 Baby,Justin Bieber Featuring Ludacris,https://open.spotify.com/track/6epn3r7S14KUqlReYr77hA,214240,2010.0,65.043
 Trap Queen,Fetty Wap,https://open.spotify.com/track/5iNRPN7oYQvdB9AmeSW6d3,222093,2015.0,148.075
@@ -1109,7 +1109,7 @@ Waiting On The World To Change,John Mayer,https://open.spotify.com/track/5imShWW
 Baby Boy,Beyonce Featuring Sean Paul,https://open.spotify.com/track/6dF5QhnUT1pjG0mDCbEYVf,244866,2003.0,91.047
 Burning Love,Elvis Presley,https://open.spotify.com/track/7zMUCLm1TN9o9JlLISztxO,171533,1973.0,143.549
 Without You,David Guetta Featuring Usher,https://open.spotify.com/track/3UN6cIn3VIyg0z1LCuFSum,208133,2012.0,127.884
-Tears In Heaven,Eric Clapton,https://open.spotify.com/track/612VcBshQcy4mpB2utGc3H,280000,1992.0,79.109
+Tears In Heaven,Eric Clapton,https://open.spotify.com/track/2lJOKQmXQ5yiRyCTE5FyDE,276866,1992.0,79.051
 Smoke On The Water,Deep Purple,https://open.spotify.com/track/5MMnwYs0hIxkENRsbkWJ2G,340742,1972.0,114.169
 The Door,Teddy Swims,https://open.spotify.com/track/3dj4wgM3cPeuLwMNHDuBon,212648,2023.0,127.922
 3,Britney Spears,https://open.spotify.com/track/5K4N7sN3j86sW1BQwyfFeF,213293,2009.0,134.979
@@ -1410,7 +1410,7 @@ Don't Dream It's Over,Crowded House,https://open.spotify.com/track/56GbZVwxMdf1D
 Daisies,Justin Bieber,https://open.spotify.com/track/5BZsQlgw21vDOAjoqkNgKb,176453,2025.0,110.153
 Nothing Else Matters,Metallica,https://open.spotify.com/track/0nLiqZ6A27jJri2VCalIUs,388266,1991.0,142.352
 Just The Two Of Us,"""Grover Washington, Jr. With Bill Withers""",https://open.spotify.com/track/1ko2lVN0vKGUl9zrU0qSlT,438493,2008.0,95.818
-Collide,Howie Day,https://open.spotify.com/track/5rwq6R0Uq0BngM3rdmCeNg,277000,2003.0,90.186
+Collide,Howie Day,https://open.spotify.com/track/5aDpULK8MbJmHl42kR5KNI,249120,2003.0,93.931
 Hard Knock Life (Ghetto Anthem),Jay-Z,https://open.spotify.com/track/5Tl0HJvynZtKdSUMKbFVVX,238466,1998.0,76.993
 """Baby, I Love Your Way""",Peter Frampton,https://open.spotify.com/track/1ksayCHVLH4eKFm43GFokU,281066,1976.0,72.269
 Broken,Seether Featuring Amy Lee,https://open.spotify.com/track/507bYMYfbm6sUS9iEAaeSd,258333,2004.0,123.762
@@ -1419,7 +1419,7 @@ Hip Hop Hooray,Naughty by Nature,https://open.spotify.com/track/1SyQ6t9RdRBK0QUC
 Swimming Pools (Drank),Kendrick Lamar,https://open.spotify.com/track/6REbwUNlppTfcnV4d4ZoZi,247800,2012.0,74.044
 Say,John Mayer,https://open.spotify.com/track/6wZI4mdT8JwXgkGURnBQiq,230213,2006.0,167.845
 Lose My Breath,Destiny's Child,https://open.spotify.com/track/2n4uOdMHzEvcZ0KP7iQnay,242013,2004.0,119.011
-The Sound Of Silence,Simon & Garfunkel,https://open.spotify.com/track/5y788ya4NvwhBznoDIcXwK,189432,1964.0,106.761
+The Sound Of Silence,Simon & Garfunkel,https://open.spotify.com/track/2YplrdHMBoRdnHgMeHEwHm,185253,1966.0,107.744
 MotorSport,"""Migos, Nicki Minaj & Cardi B""",https://open.spotify.com/track/4wFjTWCunQFKtukqrNijEt,303076,2018.0,137.993
 Ignition,R. Kelly,https://open.spotify.com/track/5dNfHmqgr128gMY2tc5CeJ,186066,2003.0,133.024
 Come And Get Your Love,Redbone,https://open.spotify.com/track/7GVUmCP00eSsqc4tzj1sDD,205933,1973.0,107.383
@@ -1791,7 +1791,7 @@ Where Do You Go,No Mercy,https://open.spotify.com/track/37tzoWY1ubBQKGXiWdO5Qv,2
 Bad Liar,Imagine Dragons,https://open.spotify.com/track/2RSHsoi04658QL5xgQVov3,260773,2018.0,88.693
 Wichita Lineman,Glen Campbell,https://open.spotify.com/track/6V9VCm1zOY2lGR80RehJ9i,186200,1968.0,172.312
 Nights In White Satin,The Moody Blues,https://open.spotify.com/track/6L5BZEcZmD6RBJnimzlyKr,269106,1967.0,84.71
-I Want To Break Free,Queen,https://open.spotify.com/track/2AkmdLbVKS1steeZdy8H1l,258013,1984.0,108.95
+I Want To Break Free,Queen,https://open.spotify.com/track/7h2yhVxcZOGyQdOwD4Hu8J,258013,1984.0,108.947
 Don't Worry Baby,The Beach Boys,https://open.spotify.com/track/1GLmaPfulP0BrfijohQpN5,169933,1964.0,121.243
 Brandy (You're A Fine Girl),Looking Glass,https://open.spotify.com/track/2BY7ALEWdloFHgQZG6VMLA,189044,1972.0,125.276
 Baby Love,The Supremes,https://open.spotify.com/track/5uES1C2NgkdrNHiCwf9jRr,158040,1964.0,135.633
