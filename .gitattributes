@@ -1,0 +1,4 @@
+# Everything under output/ is produced by the build, not written by hand.
+# Without this, GitHub Linguist reports this repo as ~95% HTML on the strength
+# of one 2.6 MB generated file, which is not a useful description of the code.
+output/** linguist-generated=true
