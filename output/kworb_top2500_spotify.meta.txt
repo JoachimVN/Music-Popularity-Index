@@ -1,0 +1,6 @@
+source: https://kworb.net/spotify/songs.html
+kworb_last_modified: 2026-10-27T12:13:13Z
+snapshot_fetched_at: 2026-10-27T12:57:58Z
+rows: 2500 (kworb rank order)
+note: 3 blank kworb "Various Artists" ghost rows (#473, #2066, #2370) removed; next 3 by streams appended (Steve Lacy - Some 719,498,147; Lil Wayne - The Motto 719,298,818; XXXTENTACION - BAD! 719,296,241)
+note: 5 white-noise tracks (kworb #140, #499, #897, #1857, #2293) removed; next 5 by streams appended (Phil Collins - Against All Odds, Junior H - ROCKSTAR, Britney Spears - Circus, Hugh Jackman - The Greatest Show, Coldplay - Hymn for the Weekend (Seeb Remix))

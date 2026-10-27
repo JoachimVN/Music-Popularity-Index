@@ -21,4 +21,6 @@ output/*
 !output/index.html
 !output/billboard.html
 !output/music_index_full.csv
+!output/kworb_top2500_spotify.csv
+!output/kworb_top2500_spotify.meta.txt
 /.vscode
